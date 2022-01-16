@@ -25,19 +25,15 @@ jobs:
         path: ~/.platformio
         key: ${{ runner.os }}-${{ hashFiles('**/lockfiles') }}
 # START TEST DO RELEASE
-    - name: Get changed files
-      id: changed-files
+    - name: Get specific changed files
+      id: changed-files-specific
       uses: tj-actions/changed-files@v13.1
-    - name: Check if version.h changed
-      id: dorelease
-      if: contains(steps.changed-files.outputs.modified_files, "version.h")
-      run: echo "::set-output name=dorelease::true"
-    - name: Test dorelease TRUE
-      if: ${{ steps.dorelease.outputs.dorelease }} == 'true'
-      run: echo "Do the release!"
-    - name: Test dorelease FALSE
-      if: ${{ steps.dorelease.outputs.dorelease }} != 'true'
-      run: echo "DO NOT do the release!"
+      with:
+        files: include/version.h
+    - name: Run step if version.h has changed
+      if: steps.changed-files-specific.outputs.any_changed == "true"
+      run: |
+	    echo "include/version.h has changed, run the build!"
 # END TEST DO RELEASE
     - name: Set up Python
       uses: actions/setup-python@v2
