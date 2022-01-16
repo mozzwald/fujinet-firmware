@@ -30,6 +30,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install --upgrade platformio
+# Install with framework-espidf so we can do dirent.h fix
     - name: Install espressif32 platform
       run: pio platform install espressif32 --with-package=framework-espidf
 
@@ -46,12 +47,6 @@ jobs:
     - name: Select ATARI Build
       run: sed -i "s/^;\{0,1\}build_platform = BUILD_${{ matrix.target-platform }}/build_platform = BUILD_${{ matrix.target-platform }}/" /home/runner/work/fujinet-platformio/fujinet-platformio/platformio.ini
 
-# Run pio command one time in order to pull in the framework-espidf files. These don't exist
-# at the start of a fresh pio install and so we cannot fix this dirent.h file until they are installed
-    #- name: Run PlatformIO - failboat
-    #  continue-on-error: true
-    #  run: pio run 
-
     - name: Fix up dirent.h top
       run: gawk -i inplace '1;/#include\ <stdint.h>/{print "\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n"}' /home/runner/.platformio/packages/framework-espidf/components/newlib/platform_include/sys/dirent.h
 
@@ -63,7 +58,7 @@ jobs:
     - name: Verify dirent.h top
       run: head -n 30 /home/runner/.platformio/packages/framework-espidf/components/newlib/platform_include/sys/dirent.h
 
-    - name: Run PlatformIO Build - winboat
+    - name: Run PlatformIO Build
       run: pio run 
 
     - name: Build Filesystem
@@ -131,11 +126,19 @@ jobs:
       with:
         args: zip -qq -j fujinet-${{ matrix.target-platform }}-${{ steps.version.outputs.version }}.zip .pio/build/fujinet-v1/release.json .pio/build/fujinet-v1/sha256sums .pio/build/fujinet-v1/bootloader.bin .pio/build/fujinet-v1/firmware.bin .pio/build/fujinet-v1/partitions.bin .pio/build/fujinet-v1/spiffs.bin .pio/build/fujinet-v1/boot_app0.bin
         
-    - name: Push ZIP to release
-      uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/tags/')
+#    - name: Push ZIP to release
+#      uses: softprops/action-gh-release@v1
+#      if: startsWith(github.ref, 'refs/tags/')
+#      with:
+#        files: fujinet-${{ matrix.target-platform }}-${{ steps.version.outputs.version }}.zip
+
+    - name: Upload binaries to release
+      uses: svenstaro/upload-release-action@v2
       with:
-        files: fujinet-${{ matrix.target-platform }}-${{ steps.version.outputs.version }}.zip
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: fujinet-${{ matrix.target-platform }}-${{ steps.version.outputs.version }}.zip
+        asset_name: fujinet-${{ matrix.target-platform }}-${{ steps.version.outputs.version }}.zip
+        tag: ${{ github.ref }}
 
     - name: Notify FujiNet server
       run: sh -c 'echo "wget https://fujinet.online/?tag=${{ steps.version.outputs.version }}&platform=${{ matrix.target-platform }}"'
