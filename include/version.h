@@ -12,6 +12,6 @@
 
 #define FN_VERSION_BUILD "fdbdc8e7"
 
-#define FN_VERSION_DATE "2022-01-07 13:55:28"
+#define FN_VERSION_DATE "2022-01-07 13:55:26"
 
 #define FN_VERSION_FULL "0.5.fdbdc8e7"
