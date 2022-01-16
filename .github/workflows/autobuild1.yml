@@ -138,7 +138,7 @@ jobs:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
         file: fujinet-${{ matrix.target-platform }}-${{ steps.version.outputs.version }}.zip
         asset_name: fujinet-${{ matrix.target-platform }}-${{ steps.version.outputs.version }}.zip
-        tag: ${{ github.ref }}
+        tag: ${{ steps.shortsha.outputs.shortsha }}
 
     - name: Notify FujiNet server
       run: sh -c 'echo "wget https://fujinet.online/?tag=${{ steps.version.outputs.version }}&platform=${{ matrix.target-platform }}"'
