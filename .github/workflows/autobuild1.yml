@@ -31,7 +31,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install --upgrade platformio
     - name: Install espressif32 platform
-      run: pio platform install espressif32@3.2.0
+      run: pio platform install espressif32 --with-all-packages
 
     - name: Show python version
       run: python --version
@@ -48,9 +48,9 @@ jobs:
 
 # Run pio command one time in order to pull in the framework-espidf files. These don't exist
 # at the start of a fresh pio install and so we cannot fix this dirent.h file until they are installed
-    - name: Run PlatformIO - failboat
-      continue-on-error: true
-      run: pio run 
+    #- name: Run PlatformIO - failboat
+    #  continue-on-error: true
+    #  run: pio run 
 
     - name: Fix up dirent.h top
       run: gawk -i inplace '1;/#include\ <stdint.h>/{print "\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n"}' /home/runner/.platformio/packages/framework-espidf/components/newlib/platform_include/sys/dirent.h
