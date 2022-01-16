@@ -24,6 +24,21 @@ jobs:
       with:
         path: ~/.platformio
         key: ${{ runner.os }}-${{ hashFiles('**/lockfiles') }}
+# START TEST DO RELEASE
+    - name: Get changed files
+      id: changed-files
+      uses: tj-actions/changed-files@v13.1
+    - name: Check if version.h changed
+      id: dorelease
+      if: contains(steps.changed-files.outputs.modified_files, "version.h")
+      run: echo "::set-output name=dorelease::true"
+    - name: Test dorelease TRUE
+      if: ${{ steps.dorelease.outputs.dorelease }} == 'true'
+      run: echo "Do the release!"
+    - name: Test dorelease FALSE
+      if: ${{ steps.dorelease.outputs.dorelease }} != 'true'
+      run: echo "DO NOT do the release!"
+# END TEST DO RELEASE
     - name: Set up Python
       uses: actions/setup-python@v2
     - name: Install PlatformIO
@@ -33,23 +48,8 @@ jobs:
 # Install with framework-espidf so we can do dirent.h fix
     - name: Install espressif32 platform
       run: pio platform install espressif32 --with-package=framework-espidf
-	- name: Get changed files
-	  id: changed-files
-	  uses: tj-actions/changed-files@v13.1
 
-	- name: Check if version.h changed
-	  id: dorelease
-	  if: contains(steps.changed-files.outputs.modified_files, "version.h")
-	  run: echo "::set-output name=dorelease::true"
-
-	- name: Test dorelease TRUE
-	  if: ${{ steps.dorelease.outputs.dorelease }} == 'true'
-	  run: echo "Do the release!"
-	
-	- name: Test dorelease FALSE
-	  if: ${{ steps.dorelease.outputs.dorelease }} != 'true'
-	  run: echo "DO NOT do the release!"
-	- name: Show python version
+    - name: Show python version
       run: python --version
     - name: Show pio system info
       run: pio system info
