@@ -4,7 +4,7 @@
 # Get arguments into named variables
 PLATFORM=$1
 VERSION=$2
-FILENAME="fujinet_$PLATFORM_$VERSION"
+FILENAME="fujinet-$PLATFORM-$VERSION"
 VERSION_DATE=`grep "FN_VERSION_DATE" include/version.h | cut -d '"' -f 2`
 BUILD_DATE=`date +'%Y-%m-%d %H:%M:%S'`
 GIT_COMMIT=`git rev-parse HEAD`
