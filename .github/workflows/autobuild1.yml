@@ -32,8 +32,7 @@ jobs:
         files: include/version.h
     - name: Run step if version.h has changed
       if: ${{ steps.changed-files-specific.outputs.any_changed == 'true' }}
-      run: |
-	    echo "include/version.h has changed, run the build!"
+      run: echo version.h has changed, run the build!
 # END TEST DO RELEASE
     - name: Set up Python
       uses: actions/setup-python@v2
