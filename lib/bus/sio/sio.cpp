@@ -385,6 +385,8 @@ void systemBus::setup()
     fnSystem.digital_write(PIN_CKI, DIGI_LOW);
     // CKO PIN
     fnSystem.set_pin_mode(PIN_CKO, gpio_mode_t::GPIO_MODE_INPUT);
+    // AUDIO PIN
+    fnSystem.set_pin_mode(PIN_DAC1, gpio_mode_t::GPIO_MODE_INPUT, SystemManager::pull_updown_t::PULL_NONE); // hi-z
 
     // Create a message queue
     qSioMessages = xQueueCreate(4, sizeof(sio_message_t));

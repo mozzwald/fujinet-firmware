@@ -165,6 +165,7 @@ void OutputSound()
     //fnSystem.dac_output_enable(SystemManager::dac_channel_t::DAC_CHANNEL_1);
     //fnSystem.dac_output_voltage(SystemManager::dac_channel_t::DAC_CHANNEL_1, 100);
 
+    fnSystem.set_pin_mode(PIN_DAC1, gpio_mode_t::GPIO_MODE_OUTPUT, SystemManager::pull_updown_t::PULL_NONE); // enable output
     dac_output_enable(DAC_CHANNEL_1);
 
     for (int i = 0; i < n; i++)
@@ -178,6 +179,7 @@ void OutputSound()
 
     //fnSystem.dac_output_disable(SystemManager::dac_channel_t::DAC_CHANNEL_1);
     dac_output_disable(DAC_CHANNEL_1);
+    fnSystem.set_pin_mode(PIN_DAC1, gpio_mode_t::GPIO_MODE_INPUT, SystemManager::pull_updown_t::PULL_NONE); // hi-z
 
     FreeBuffer();
 #endif
