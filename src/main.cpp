@@ -14,6 +14,9 @@
 #include "bus.h"
 #include "device.h"
 #ifdef ESP_PLATFORM
+#if CONFIG_IDF_TARGET_ESP32S3
+  #include "fnUSBHost.h"
+#endif
   #include "keys.h"
 #endif
 #include "led.h"
@@ -267,6 +270,9 @@ void main_setup(int argc, char *argv[])
 #endif // BUILD_ATARI
 
 #ifdef BUILD_COCO
+#if CONFIG_IDF_TARGET_ESP32S3
+    fnUSBHost.setup_host(); // Setup USB Host Driver
+#endif
     theFuji.setup(&DRIVEWIRE);
 
     FileSystem *ptrfs = fnSDFAT.running() ? (FileSystem *)&fnSDFAT : (FileSystem *)&fsFlash;
