@@ -217,8 +217,8 @@ void USBHost::setup_host(void)
     Debug_printf("USB Host Installed\n");
  
     // Create a task that will handle USB library events
-    BaseType_t task_created = xTaskCreate(usb_lib_task, "usb_lib", 4096, NULL, 10, NULL);
-    assert(task_created == pdTRUE);
+    BaseType_t lib_task_created = xTaskCreate(usb_lib_task, "usb_lib", 4096, NULL, 10, NULL);
+    assert(lib_task_created == pdTRUE);
 
     ESP_ERROR_CHECK(cdc_acm_host_install(NULL));
     Debug_printf("USB Host CDC-ACM Installed\n");
@@ -230,8 +230,8 @@ void USBHost::setup_host(void)
     Debug_printf("USB Host VCP Drivers Registered\n");
 
     // Create a task that will handle the VCP
-    BaseType_t task_created = xTaskCreate(usb_vcp_task, "usb_vcp", 4096, NULL, 10, NULL);
-    assert(task_created == pdTRUE);
+    BaseType_t vcp_task_created = xTaskCreate(usb_vcp_task, "usb_vcp", 4096, NULL, 10, NULL);
+    assert(vcp_task_created == pdTRUE);
     Debug_printf("USB Host VCP Task Started\n");
 }
 #endif /* CONFIG_IDF_TARGET_ESP32S3 */
