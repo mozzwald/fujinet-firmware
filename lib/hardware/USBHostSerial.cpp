@@ -205,15 +205,28 @@ void USBHostSerial::_setup() {
 
 bool USBHostSerial::_handle_rx(const uint8_t *data, size_t data_len, void *arg) {
   std::size_t lenReceived = 0;
+#ifdef USB_HOST_DEBUG
+    Debug_printf("USBHostSerial RECV:\n");
+#endif
   while (lenReceived < data_len) {
     if (xRingbufferSend(static_cast<USBHostSerial*>(arg)->_tx_buf_handle, &data[lenReceived], 1, 10) == pdTRUE) {
+#ifdef USB_HOST_DEBUG
+      Debug_printf("%x ", (void *)&data[lenReceived]);
+#endif
       ++lenReceived;
     } else {
       break;
     }
   }
+#ifdef USB_HOST_DEBUG
+    Debug_printf("\nRECV END\n");
+#endif
+
   if (lenReceived < data_len) {
     // log overflow warning
+#ifdef USB_HOST_DEBUG
+    Debug_printf("USBHostSerial: USB RX buffer overflow!\n");
+#endif
   }
   return true;
 }
