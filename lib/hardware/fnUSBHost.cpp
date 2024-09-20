@@ -1,19 +1,10 @@
-/*
- * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: CC0-1.0
- */
 #include "fnUSBHost.h"
 
-#if CONFIG_IDF_TARGET_ESP32S3
+#if CONFIG_IDF_TARGET_ESP32S3POOP
+#include "utils.h"
+#include "../../include/debug.h"
 
-#include <stdio.h>
-#include <string.h>
-#include <inttypes.h>
-#include "esp_system.h"
-#include "esp_log.h"
-#include "esp_err.h"
-
+#include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 #include "usb/usb_host.h"
@@ -25,82 +16,104 @@
 #include "usb/msc_host.h"
 #include "usb/msc_host_vfs.h"
 
-#include "utils.h"
-#include "../../include/debug.h"
-
 using namespace esp_usb;
 
-static const char *TAG = "fnUSBHost"; // switch to fuji debug!
+USBHost fnUSBHost; // Global USB Host object
 static SemaphoreHandle_t device_disconnected_sem;
 
-USBHost fnUSBHost; // Global USB Host object
+// Buffer for received data
+uint8_t rx_buffer[USB_HOST_RX_BUFFER_SIZE];
+size_t rx_buffer_head;
+size_t rx_buffer_tail;
+SemaphoreHandle_t rx_buffer_mutex;  // To protect access to the buffer
 
 /**
- * @brief Application Queue and its messages ID (for MSC)
- */
-static QueueHandle_t app_queue;
-typedef struct {
-    enum {
-        APP_QUIT,                // Signals request to exit the application
-        APP_DEVICE_CONNECTED,    // USB device connect event
-        APP_DEVICE_DISCONNECTED, // USB device disconnect event
-    } id;
-    union {
-        uint8_t new_dev_address; // Address of new USB device for APP_DEVICE_CONNECTED event if
-    } data;
-} app_message_t;
-
-/**
- * @brief CDC Data received callback
+ * @brief USB Host library handling task
  *
- * @param[in] data     Pointer to received data
- * @param[in] data_len Length of received data in bytes
- * @param[in] arg      Argument we passed to the device open function
- * @return
- *   true:  We have processed the received data
- *   false: We expect more data
+ * @param arg Unused
  */
-static bool handle_rx(const uint8_t *data, size_t data_len, void *arg)
+static void usb_lib_task(void *arg)
 {
-    #ifdef USB_HOST_DEBUG
-    Debug_printf("USB CDC Data recv:\n");
-    util_dump_bytes(data, data_len);
-    #endif
-    // Put the data in a buffer
-    return true;
-}
-
-/**
- * @brief MSC driver callback
- *
- * Signal device connection/disconnection to the main task
- *
- * @param[in] event MSC event
- * @param[in] arg   MSC event data
- */
-static void msc_event_cb(const msc_host_event_t *event, void *arg)
-{
-    app_message_t message;
-    if (event->event == msc_host_event_t::MSC_DEVICE_CONNECTED) {
-        ESP_LOGI(TAG, "MSC device connected");
-        message.id = app_message_t::APP_DEVICE_CONNECTED;
-        message.data.new_dev_address = event->device.address;
-    } else if (event->event == msc_host_event_t::MSC_DEVICE_DISCONNECTED) {
-        ESP_LOGI(TAG, "MSC device disconnected");
-        message.id = app_message_t::APP_DEVICE_CONNECTED;
-        message.data.new_dev_address = event->device.address;
+    while (1) {
+        // Start handling system events
+        uint32_t event_flags;
+        usb_host_lib_handle_events(portMAX_DELAY, &event_flags);
+        if (event_flags & USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS) {
+            ESP_ERROR_CHECK(usb_host_device_free_all());
+        }
+        if (event_flags & USB_HOST_LIB_EVENT_FLAGS_ALL_FREE) {
+#ifdef USB_HOST_DEBUG
+            Debug_printv("fnUSBHost: All devices freed");
+#endif            
+            // Continue handling USB events to allow device reconnection
+        }
     }
-    xQueueSend(app_queue, &message, portMAX_DELAY);
 }
 
 /**
- * @brief USB Device event callback
+ * @brief VCP library handling task
  *
- * Apart from handling device disconnection it doesn't do anything useful
- *
- * @param[in] event    Device event type and data
- * @param[in] user_ctx Argument we passed to the device open function
+ * @param arg Unused
  */
+static void usb_vcp_task(void *arg)
+{
+    USBHost fnUSBHost;
+    // Do everything else in a loop, so we can demonstrate USB device reconnections
+    while (true) {
+        const cdc_acm_host_device_config_t dev_config = {
+            .connection_timeout_ms = 5000, // 5 seconds, enough time to plug the device in or experiment with timeout
+            .out_buffer_size = 512,
+            .in_buffer_size = 512,
+            .event_cb = handle_event,
+            .data_cb = handle_rx,
+            .user_arg = NULL,
+        };
+
+        // You don't need to know the device's VID and PID. Just plug in any device and the VCP service will load correct (already registered) driver for the device
+#ifdef USB_HOST_DEBUG
+        Debug_printv("fnUSBHost: Opening any VCP device..");
+#endif            
+        auto vcp = std::unique_ptr<CdcAcmDevice>(VCP::open(&dev_config));
+
+        if (vcp == nullptr) {
+#ifdef USB_HOST_DEBUG
+            Debug_printv("fnUSBHost: Failed to open any VCP");
+#endif            
+            continue;
+        }
+        vTaskDelay(10);
+
+#ifdef USB_HOST_DEBUG
+        Debug_printv("fnUSBHost: Setting up line encoding");
+#endif            
+        cdc_acm_line_coding_t line_coding = {
+            .dwDTERate = VCP_BAUDRATE,
+            .bCharFormat = VCP_STOP_BITS,
+            .bParityType = VCP_PARITY,
+            .bDataBits = VCP_DATA_BITS,
+        };
+        ESP_ERROR_CHECK(vcp->line_coding_set(&line_coding));
+
+        /*
+        Now the USB-to-UART converter is configured and receiving data.
+        You can use standard CDC-ACM API to interact with it. E.g.
+
+        ESP_ERROR_CHECK(vcp->set_control_line_state(false, true));
+        ESP_ERROR_CHECK(vcp->tx_blocking((uint8_t *)"Test string", 12));
+        */
+
+        // Send some dummy data
+        //ESP_LOGI(TAG, "Sending data through CdcAcmDevice");
+        //uint8_t data[] = "test_string";
+        //ESP_ERROR_CHECK(vcp->tx_blocking(data, sizeof(data)));
+        //ESP_ERROR_CHECK(vcp->set_control_line_state(true, true));
+
+        // We are done. Wait for device disconnection and start over
+        //ESP_LOGI(TAG, "Done. You can reconnect the VCP device to run again.");
+        //xSemaphoreTake(device_disconnected_sem, portMAX_DELAY);
+    }
+}
+
 static void handle_event(const cdc_acm_host_dev_event_data_t *event, void *user_ctx)
 {
     switch (event->type) {
@@ -122,116 +135,168 @@ static void handle_event(const cdc_acm_host_dev_event_data_t *event, void *user_
     }
 }
 
-/**
- * @brief USB Host library handling task
- *
- * @param arg Unused
- */
-static void usb_lib_task(void *arg)
-{
-    while (1) {
-        // Start handling system events
-        uint32_t event_flags;
-        usb_host_lib_handle_events(portMAX_DELAY, &event_flags);
-        if (event_flags & USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS) {
-            ESP_ERROR_CHECK(usb_host_device_free_all());
-        }
-        if (event_flags & USB_HOST_LIB_EVENT_FLAGS_ALL_FREE) {
-            Debug_printf("USB Host: All devices freed!\n");
-            // Continue handling USB events to allow device reconnection
-        }
-    }
-}
-
-/**
- * @brief USB CDC Driver Task
- *
- * @param arg Unused
- */
-void usb_vcp_task(void *arg)
-{
-    while (true) {
-        const cdc_acm_host_device_config_t dev_config = {
-            .connection_timeout_ms = 5000, // 5 seconds, enough time to plug the device in or experiment with timeout
-            .out_buffer_size = 512,
-            .in_buffer_size = 512,
-            .event_cb = handle_event,
-            .data_cb = handle_rx,
-            .user_arg = NULL,
-        };
-
-        // You don't need to know the device's VID and PID. Just plug in any device and the VCP service will load correct (already registered) driver for the device
-        Debug_printf("USB VCP: opening any device\n");
-        auto vcp = std::unique_ptr<CdcAcmDevice>(VCP::open(&dev_config));
-
-        if (vcp == nullptr) {
-            Debug_printf("USB VCP: failed to open device\n");
-            continue;
-        }
-        vTaskDelay(10);
-
-        Debug_printf("USB VCP: Setting up line coding\n");
-        cdc_acm_line_coding_t line_coding = {
-            .dwDTERate = VCP_BAUDRATE,
-            .bCharFormat = VCP_STOP_BITS,
-            .bParityType = VCP_PARITY,
-            .bDataBits = VCP_DATA_BITS,
-        };
-        ESP_ERROR_CHECK(vcp->line_coding_set(&line_coding));
-
-        /*
-        Now the USB-to-UART converter is configured and receiving data.
-        You can use standard CDC-ACM API to interact with it. E.g.
-
-        ESP_ERROR_CHECK(vcp->set_control_line_state(false, true));
-        ESP_ERROR_CHECK(vcp->tx_blocking((uint8_t *)"Test string", 12));
-        */
-
-        // Send some dummy data
-        ESP_LOGI(TAG, "Sending data through CdcAcmDevice");
-        uint8_t data[] = "test_string";
-        ESP_ERROR_CHECK(vcp->tx_blocking(data, sizeof(data)));
-        ESP_ERROR_CHECK(vcp->set_control_line_state(true, true));
-
-        // We are done. Wait for device disconnection and start over
-        ESP_LOGI(TAG, "Done. You can reconnect the VCP device to run again.");
-        xSemaphoreTake(device_disconnected_sem, portMAX_DELAY);
-    }
-}
-
-/**
- * @brief Setup USB Host
- *
- * Here we open a USB CDC device
- */
-void USBHost::setup_host(void)
-{
+bool USBHost::init() {
+    esp_err_t err;
     device_disconnected_sem = xSemaphoreCreateBinary();
     assert(device_disconnected_sem);
 
-    // Install USB Host driver. Should only be called once in entire application
-    usb_host_config_t host_config = {};
-    host_config.skip_phy_setup = false;
-    host_config.intr_flags = ESP_INTR_FLAG_LEVEL1;
-    ESP_ERROR_CHECK(usb_host_install(&host_config));
-    Debug_printf("USB Host Installed\n");
- 
-    // Create a task that will handle USB library events
-    BaseType_t lib_task_created = xTaskCreate(usb_lib_task, "usb_lib", 4096, NULL, 10, NULL);
-    assert(lib_task_created == pdTRUE);
+    // Install USB Host Library
+    usb_host_config_t host_config = {
+        .skip_phy_setup = false,
+        .intr_flags = 0,
+    };
+    err = usb_host_install(&host_config);
+    if (err != ESP_OK) {
+#ifdef USB_HOST_DEBUG
+        Debug_printv("fnUSBHost: Failed to install USB Host Library: %s", esp_err_to_name(err));
+#endif
+        return false;
+    }
 
-    ESP_ERROR_CHECK(cdc_acm_host_install(NULL));
-    Debug_printf("USB Host CDC-ACM Installed\n");
+    // Create a task that will handle USB library events
+    BaseType_t task_created = xTaskCreate(usb_lib_task, "usb_lib", 4096, NULL, 10, NULL);
+    assert(task_created == pdTRUE);
+
+    // Create event queue
+    event_queue = xQueueCreate(10, sizeof(usb_host_client_event_msg_t));
+    if (event_queue == nullptr) {
+#ifdef USB_HOST_DEBUG
+        Debug_println("fnUSBHost: Failed to create event queue");
+#endif
+        usb_host_uninstall();
+        return false;
+    }
 
     // Register VCP drivers to VCP service
     VCP::register_driver<FT23x>();
     VCP::register_driver<CP210x>();
     VCP::register_driver<CH34x>();
-    Debug_printf("USB Host VCP Drivers Registered\n");
 
-    // Create a task that will handle the VCP
-    BaseType_t vcp_task_created = xTaskCreate(usb_vcp_task, "usb_vcp", 4096, NULL, 10, NULL);
-    assert(vcp_task_created == pdTRUE);
-    Debug_printf("USB Host VCP Task Started\n");
+//#ifdef USB_HOST_DEBUG
+    Debug_println("fnUSBHost: USB Host and VCP Drivers initialized successfully");
+//#endif
+    return true;
+}
+
+void USBHost::deinit() {
+    if (cdc_dev != nullptr) {
+        cdc_acm_host_close(cdc_dev);
+        cdc_dev = nullptr;
+    }
+    cdc_acm_host_uninstall();
+    if (client_handle != nullptr) {
+        usb_host_client_deregister(client_handle);
+        client_handle = nullptr;
+    }
+    if (event_queue != nullptr) {
+        vQueueDelete(event_queue);
+        event_queue = nullptr;
+    }
+    usb_host_uninstall();
+#ifdef USB_HOST_DEBUG
+    Debug_println("fnUSBHost: USB Host and CDC-ACM deinitialized");
+#endif
+}
+
+size_t USBHost::read(uint8_t* data, size_t length) {
+    if (rx_buffer_mutex == nullptr) {
+        return 0;
+    }
+    if (xSemaphoreTake(rx_buffer_mutex, portMAX_DELAY) == pdTRUE) {
+        size_t available_data = (rx_buffer_head >= rx_buffer_tail) ? (rx_buffer_head - rx_buffer_tail) :
+                                (USB_HOST_RX_BUFFER_SIZE - rx_buffer_tail + rx_buffer_head);
+
+        size_t bytes_to_read = (length < available_data) ? length : available_data;
+
+        for (size_t i = 0; i < bytes_to_read; ++i) {
+            data[i] = rx_buffer[rx_buffer_tail];
+            rx_buffer_tail = (rx_buffer_tail + 1) % USB_HOST_RX_BUFFER_SIZE;
+        }
+
+        xSemaphoreGive(rx_buffer_mutex);
+        return bytes_to_read;
+    } else {
+        // Failed to take mutex
+        return 0;
+    }
+}
+
+size_t USBHost::write(const uint8_t* data, size_t length) {
+    if (!device_connected || cdc_dev == nullptr) {
+#ifdef USB_HOST_DEBUG
+        Debug_println("fnUSBHost: Device not connected");
+#endif
+        return 0;
+    }
+
+    esp_err_t err = cdc_acm_host_data_tx_blocking(cdc_dev, data, length, 1000);
+    if (err != ESP_OK && err != ESP_ERR_TIMEOUT) {
+#ifdef USB_HOST_DEBUG
+        Debug_printv("fnUSBHost: Error writing data: %s", esp_err_to_name(err));
+#endif
+    }
+    return length;
+}
+
+void USBHost::set_line_coding(uint32_t baud_rate, uint8_t data_bits, uint8_t parity, uint8_t stop_bits) {
+    if (!device_connected || cdc_dev == nullptr) {
+#ifdef USB_HOST_DEBUG
+        Debug_println("fnUSBHost: Device not connected");
+#endif
+        return;
+    }
+
+    cdc_acm_line_coding_t line_coding = {
+        .dwDTERate = baud_rate,
+        .bCharFormat = stop_bits,
+        .bParityType = parity,
+        .bDataBits = data_bits,
+    };
+
+    esp_err_t err = cdc_acm_host_line_coding_set(cdc_dev, &line_coding);
+    if (err != ESP_OK) {
+#ifdef USB_HOST_DEBUG
+        Debug_printv("fnUSBHost: Failed to set line coding: %s", esp_err_to_name(err));
+#endif
+    } else {
+#ifdef USB_HOST_DEBUG
+        Debug_println("fnUSBHost: Line coding set successfully");
+#endif
+    }
+}
+
+bool USBHost::is_connected() {
+    return device_connected;
+}
+
+bool handle_rx(const uint8_t *data, size_t data_len, void *arg) {
+#ifdef USB_HOST_DEBUG
+    Debug_printf("USB CDC Data recv:\n");
+    util_dump_bytes(data, data_len);
+#endif
+
+    if (rx_buffer_mutex == nullptr) {
+        return false;
+    }
+
+    if (xSemaphoreTake(rx_buffer_mutex, portMAX_DELAY) == pdTRUE) {
+        for (size_t i = 0; i < data_len; ++i) {
+            size_t next_head = (rx_buffer_head + 1) % USB_HOST_RX_BUFFER_SIZE;
+            if (next_head == rx_buffer_tail) {
+                // Buffer overflow, drop data or handle overflow
+#ifdef USB_HOST_DEBUG
+                Debug_println("fnUSBHost: RX buffer overflow");
+#endif
+                break;
+            }
+            rx_buffer[rx_buffer_head] = data[i];
+            rx_buffer_head = next_head;
+        }
+        xSemaphoreGive(rx_buffer_mutex);
+        return true;
+    } else {
+        // Failed to take mutex
+        return false;
+    }
 }
 #endif /* CONFIG_IDF_TARGET_ESP32S3 */

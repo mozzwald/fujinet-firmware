@@ -4,7 +4,12 @@
 #include <stdio.h>
 
 #include "fnUART.h"
+#include "sdkconfig.h" // for CONFIG_IDF_TARGET_ESP32S3
 #include "dwport.h"
+
+#if CONFIG_IDF_TARGET_ESP32S3
+#include "USBHostSerial.h"
+#endif
 
 /*
  * Implementation of DriveWire Port using UART serial port
@@ -15,7 +20,11 @@ class SerialDwPort : public DwPort
 {
 private:
 #ifdef ESP_PLATFORM
+#if CONFIG_IDF_TARGET_ESP32S3
+    USBHostSerial _uart = USBHostSerial();
+#else
     UARTManager _uart = UARTManager(FN_UART_BUS);
+#endif
 #else
     UARTManager _uart;
 #endif
