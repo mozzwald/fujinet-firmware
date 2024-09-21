@@ -6,8 +6,8 @@
 
 void SerialDwPort::begin(int baud)
 {
+    _uart.begin(baud);
     Debug_printf("SerialDwPort: begin @ %d\n", baud);
-     _uart.begin(baud);
 }
 
 // read bytes into buffer

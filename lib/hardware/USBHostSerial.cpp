@@ -153,8 +153,15 @@ uint8_t USBHostSerial::read() {
   std::size_t pxItemSize = 0;
   void* ret = xRingbufferReceiveUpTo(_rx_buf_handle, &pxItemSize, 0, 1);
   if (ret) {
+#ifdef USB_HOST_DEBUG
+  Debug_printf("USBHostSerial: 1 byte read\n");
+#endif
+    vRingbufferReturnItem(_rx_buf_handle, ret);
     return *reinterpret_cast<uint8_t*>(ret);
   }
+#ifdef USB_HOST_DEBUG
+  Debug_printf("USBHostSerial: 0 bytes read\n");
+#endif 
   return 0;
 }
 
@@ -172,6 +179,9 @@ size_t USBHostSerial::readBytes(uint8_t *buffer, size_t length)
       break;
     }
   }
+#ifdef USB_HOST_DEBUG
+  Debug_printf("USBHostSerial: %d readBytes\n", retVal);
+#endif 
   return retVal;
 }
 
@@ -205,22 +215,19 @@ void USBHostSerial::_setup() {
 
 bool USBHostSerial::_handle_rx(const uint8_t *data, size_t data_len, void *arg) {
   std::size_t lenReceived = 0;
+
 #ifdef USB_HOST_DEBUG
-    Debug_printf("USBHostSerial RECV:\n");
+  Debug_printf("USBHostSerial RECV: ");
+  util_dump_bytes(data, data_len);
 #endif
+
   while (lenReceived < data_len) {
-    if (xRingbufferSend(static_cast<USBHostSerial*>(arg)->_tx_buf_handle, &data[lenReceived], 1, 10) == pdTRUE) {
-#ifdef USB_HOST_DEBUG
-      Debug_printf("%x ", (void *)&data[lenReceived]);
-#endif
+    if (xRingbufferSend(static_cast<USBHostSerial*>(arg)->_rx_buf_handle, &data[lenReceived], 1, 10) == pdTRUE) {
       ++lenReceived;
     } else {
       break;
     }
   }
-#ifdef USB_HOST_DEBUG
-    Debug_printf("\nRECV END\n");
-#endif
 
   if (lenReceived < data_len) {
     // log overflow warning
