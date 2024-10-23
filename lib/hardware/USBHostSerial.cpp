@@ -120,11 +120,15 @@ std::size_t USBHostSerial::write(const uint8_t *data, std::size_t len) {
   std::size_t i = 0;
   for (; i < len; ++i) {
     if (write(data[i]) == 1) {
-      ++i;
+      // Continue
     } else {
       break;
     }
   }
+#ifdef USB_HOST_DEBUG
+  Debug_printf("USBHostSerial %i bytes written:\n", i);
+  util_dump_bytes(data, len);
+#endif
   return i;
 }
 
@@ -140,6 +144,9 @@ size_t USBHostSerial::write(const char *str)
       break;
     }
   }
+#ifdef USB_HOST_DEBUG
+  Debug_printf("USBHostSerial: %i bytes written\n", i);
+#endif
   return i;
 }
 
@@ -154,15 +161,15 @@ uint8_t USBHostSerial::read() {
   void* ret = xRingbufferReceiveUpTo(_rx_buf_handle, &pxItemSize, 0, 1);
   if (ret) {
 #ifdef USB_HOST_DEBUG
-  Debug_printf("USBHostSerial: 1 byte read\n");
+  Debug_printf("USBHostSerial read: %x\n", *reinterpret_cast<uint8_t*>(ret));
 #endif
     vRingbufferReturnItem(_rx_buf_handle, ret);
     return *reinterpret_cast<uint8_t*>(ret);
   }
 #ifdef USB_HOST_DEBUG
-  Debug_printf("USBHostSerial: 0 bytes read\n");
+  Debug_printf("USBHostSerial read: 0 bytes\n");
 #endif 
-  return 0;
+  return -1;
 }
 
 size_t USBHostSerial::readBytes(uint8_t *buffer, size_t length)
@@ -180,7 +187,8 @@ size_t USBHostSerial::readBytes(uint8_t *buffer, size_t length)
     }
   }
 #ifdef USB_HOST_DEBUG
-  Debug_printf("USBHostSerial: %d readBytes\n", retVal);
+  Debug_printf("USBHostSerial readBytes %d:\n", retVal);
+  util_dump_bytes(buffer, length);
 #endif 
   return retVal;
 }
@@ -217,7 +225,7 @@ bool USBHostSerial::_handle_rx(const uint8_t *data, size_t data_len, void *arg) 
   std::size_t lenReceived = 0;
 
 #ifdef USB_HOST_DEBUG
-  Debug_printf("USBHostSerial RECV: ");
+  Debug_printf("USBHostSerial RECV: \n");
   util_dump_bytes(data, data_len);
 #endif
 

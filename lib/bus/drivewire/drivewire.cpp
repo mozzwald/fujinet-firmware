@@ -605,6 +605,7 @@ void systemBus::setup()
 #ifdef CONFIG_IDF_TARGET_ESP32S3
     // Configure UART to RP2040
     _drivewireBaud = 115200;
+    //_drivewireBaud = 57600; // For testing
 #else
     // Setup interrupt for cassette motor pin
     gpio_config_t io_conf = {
