@@ -29,7 +29,7 @@
 #include "pinmap/rc2014spi_rev0.h"
 #include "pinmap/heathkit_h89.h"
 #include "pinmap/atari2600.h"
-
+#include "pinmap/iec-freenove-s3.h"
 
 #ifndef PIN_DEBUG
 #define PIN_DEBUG		PIN_IEC_SRQ
