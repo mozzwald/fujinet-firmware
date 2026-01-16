@@ -8,6 +8,44 @@
 #include "fnSystem.h"
 #include "utils.h"
 
+static uint64_t udpstream_time_us()
+{
+#ifdef ESP_PLATFORM
+    return (uint64_t)esp_timer_get_time();
+#else
+    return (uint64_t)fnSystem.millis() * 1000ULL;
+#endif
+}
+
+void sioUDPStream::pace_to_atari(uint32_t min_gap_us)
+{
+    // Deadline-driven pacing to keep UDP->SIO output moving even when other paths wait.
+    uint8_t send_count = 0;
+    while (rx_count > 0 && send_count < 16)
+    {
+        uint64_t now_us = udpstream_time_us();
+        if ((now_us - last_tx_us) < min_gap_us)
+            break;
+        uint8_t out = rx_ring[rx_tail];
+        rx_tail = (rx_tail + 1) % UDPSTREAM_RX_RING_SIZE;
+        rx_count--;
+        SYSTEM_BUS.write(&out, 1);
+        last_tx_us += min_gap_us;
+        send_count++;
+    }
+
+    if (udpstreamKeepaliveEnabled && stream_started && rx_count == 0)
+    {
+        uint64_t now_us = udpstream_time_us();
+        if ((now_us - last_tx_us) >= UDPSTREAM_KEEPALIVE_TIMEOUT)
+        {
+            uint8_t keepalive = 0x00;
+            SYSTEM_BUS.write(&keepalive, 1);
+            last_tx_us = now_us;
+        }
+    }
+}
+
 void sioUDPStream::sio_enable_udpstream()
 {
     if (udpstream_port == MIDI_PORT)
@@ -46,6 +84,13 @@ void sioUDPStream::sio_enable_udpstream()
     udpStream.begin(udpstream_port);
 
     udpstreamActive = true;
+    last_rx_us = udpstream_time_us();
+    last_tx_us = last_rx_us;
+    stream_started = false;
+    rx_head = 0;
+    rx_tail = 0;
+    rx_count = 0;
+    rx_drop_count = 0;
     Debug_println("UDPSTREAM mode ENABLED");
     if (udpstreamIsServer)
     {
@@ -87,37 +132,55 @@ void sioUDPStream::sio_disable_udpstream()
 
 void sioUDPStream::sio_handle_udpstream()
 {
+    const uint32_t min_gap_us = (udpstream_port == MIDI_PORT) ? UDPSTREAM_MIN_GAP_US_MIDI : UDPSTREAM_MIN_GAP_US_SIO;
+    const uint64_t now_us = udpstream_time_us();
+
     // if there’s data available, read a packet
     int packetSize = udpStream.parsePacket();
     if (packetSize > 0)
     {
         udpStream.read(buf_net, UDPSTREAM_BUFFER_SIZE);
-        // Send to Atari UART
-        SYSTEM_BUS.write(buf_net, packetSize);
-#ifdef ESP_PLATFORM
-        if (udpstreamIsServer)
+        // Look for game start in incoming stream (debug only).
+        for (int i = 0; i < packetSize; i++)
         {
-            // Reset the timer
-            start = (uint32_t)esp_timer_get_time();
-        }
-#endif
+            if (buf_net[i] == 0x87 && !stream_started)
+            {
+                stream_started = true;
 #ifdef DEBUG_UDPSTREAM
-        Debug_print("UDP-IN: ");
+                Debug_println("UDPSTREAM: 0x87 seen (UDP-IN)");
+#endif
+                break;
+            }
+        }
+
+        // Buffer incoming UDP bytes for paced UART output.
+        for (int i = 0; i < packetSize; i++)
+        {
+            if (rx_count < UDPSTREAM_RX_RING_SIZE)
+            {
+                rx_ring[rx_head] = buf_net[i];
+                rx_head = (rx_head + 1) % UDPSTREAM_RX_RING_SIZE;
+                rx_count++;
+            }
+            else
+            {
+                // Drop oldest byte to keep the most recent stream data.
+                rx_tail = (rx_tail + 1) % UDPSTREAM_RX_RING_SIZE;
+                rx_ring[rx_head] = buf_net[i];
+                rx_head = (rx_head + 1) % UDPSTREAM_RX_RING_SIZE;
+                rx_drop_count++;
+            }
+        }
+        last_rx_us = now_us;
+#ifdef DEBUG_UDPSTREAM
+        Debug_printf("UDP-IN [%llu ms]: ", (unsigned long long)(udpstream_time_us() / 1000ULL));
         util_dump_bytes(buf_net, packetSize);
 #endif
     }
 
-#ifdef ESP_PLATFORM
-/*   // Send a fake keep alive packet if it's taking too long. This isn't working
-    if ((uint32_t)esp_timer_get_time() - start >= UDPSTREAM_KEEPALIVE_TIMEOUT
-        && fnSystem.digital_read(PIN_MTR) == DIGI_HIGH) // only if MTR line is on
-    {
-        fnUartSIO.write(0x00);
-        Debug_println("UDPSTREAM: Fake SIO keep alive packet");
-        start = (uint32_t)esp_timer_get_time();
-    }
-*/
-#endif
+    pace_to_atari(min_gap_us);
+
+    // Keepalive disabled for now to avoid desync during setup.
 
     // Read the data until there's a pause in the incoming stream
     if (SYSTEM_BUS.available() > 0)
@@ -138,13 +201,30 @@ void sioUDPStream::sio_handle_udpstream()
             if (SYSTEM_BUS.available() > 0)
             {
                 // Collect bytes read in our buffer
-                buf_stream[buf_stream_index] = (unsigned char)SYSTEM_BUS.read(); // TODO apc: check for error first
+                int in_byte = SYSTEM_BUS.read(); // TODO apc: check for error first
+                if (in_byte == 0x87 && !stream_started)
+                {
+                    stream_started = true;
+#ifdef DEBUG_UDPSTREAM
+                    Debug_println("UDPSTREAM: 0x87 seen (SIO-OUT)");
+#endif
+                }
+                buf_stream[buf_stream_index] = (unsigned char)in_byte;
                 if (buf_stream_index < UDPSTREAM_BUFFER_SIZE - 1)
                     buf_stream_index++;
             }
             else
             {
-                fnSystem.delay_microseconds(UDPSTREAM_PACKET_TIMEOUT);
+                // Short, bounded waits prevent starving the pacing loop.
+                const uint32_t wait_step_us = 250;
+                const uint32_t wait_budget_us = 10000;
+                uint32_t waited_us = 0;
+                while (waited_us < wait_budget_us && SYSTEM_BUS.available() <= 0)
+                {
+                    fnSystem.delay_microseconds(wait_step_us);
+                    waited_us += wait_step_us;
+                    pace_to_atari(min_gap_us);
+                }
                 if (SYSTEM_BUS.available() <= 0)
                     break;
             }
@@ -156,7 +236,7 @@ void sioUDPStream::sio_handle_udpstream()
         udpStream.endPacket();
 
 #ifdef DEBUG_UDPSTREAM
-        Debug_print("UDP-OUT: ");
+        Debug_printf("UDP-OUT [%llu ms]: ", (unsigned long long)(udpstream_time_us() / 1000ULL));
         util_dump_bytes(buf_stream, buf_stream_index);
 #endif
         buf_stream_index = 0;
@@ -168,6 +248,9 @@ void sioUDPStream::sio_handle_udpstream()
             buf_stream_index += 2;
         }
     }
+
+    // Pace again after serial->UDP handling to avoid starving during outbound bursts.
+    pace_to_atari(min_gap_us);
 }
 
 void sioUDPStream::sio_status()
