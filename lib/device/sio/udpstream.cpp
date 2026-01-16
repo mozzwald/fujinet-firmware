@@ -134,6 +134,38 @@ void sioUDPStream::sio_handle_udpstream()
 {
     const uint32_t min_gap_us = (udpstream_port == MIDI_PORT) ? UDPSTREAM_MIN_GAP_US_MIDI : UDPSTREAM_MIN_GAP_US_SIO;
     const uint64_t now_us = udpstream_time_us();
+    const size_t base_index = udpstreamIsServer ? sizeof(packet_seq) : 0;
+    uint64_t batch_start_us = 0;
+    bool batch_active = false;
+
+    auto flush_udp_out_batch = [&]()
+    {
+        if (buf_stream_index <= base_index)
+            return;
+
+        udpStream.beginPacket(udpstream_host_ip, udpstream_port); // remote IP and port
+        udpStream.write(buf_stream, buf_stream_index);
+        udpStream.endPacket();
+
+#ifdef DEBUG_UDPSTREAM
+        Debug_printf("UDP-OUT [%llu ms]: ", (unsigned long long)(udpstream_time_us() / 1000ULL));
+        util_dump_bytes(buf_stream, buf_stream_index);
+#endif
+
+        if (udpstreamIsServer)
+        {
+            // number the outgoing packet for the server to handle sequencing
+            packet_seq += 1;
+            *(uint16_t *)buf_stream = packet_seq;
+            buf_stream_index = base_index;
+        }
+        else
+        {
+            buf_stream_index = 0;
+        }
+        batch_active = false;
+        batch_start_us = 0;
+    };
 
     // if there’s data available, read a packet
     int packetSize = udpStream.parsePacket();
@@ -209,9 +241,26 @@ void sioUDPStream::sio_handle_udpstream()
                     Debug_println("UDPSTREAM: 0x87 seen (SIO-OUT)");
 #endif
                 }
+                if (!batch_active)
+                {
+                    batch_start_us = udpstream_time_us();
+                    batch_active = true;
+                }
                 buf_stream[buf_stream_index] = (unsigned char)in_byte;
                 if (buf_stream_index < UDPSTREAM_BUFFER_SIZE - 1)
                     buf_stream_index++;
+                if (buf_stream_index >= UDPSTREAM_FLUSH_THRESHOLD)
+                {
+                    // Flush when nearly full to avoid overwrite/drops.
+                    flush_udp_out_batch();
+                    continue;
+                }
+                if (batch_active && (udpstream_time_us() - batch_start_us) >= UDPSTREAM_MAX_BATCH_AGE_US)
+                {
+                    // Flush old batches even if the stream never pauses.
+                    flush_udp_out_batch();
+                    continue;
+                }
             }
             else
             {
@@ -219,34 +268,29 @@ void sioUDPStream::sio_handle_udpstream()
                 const uint32_t wait_step_us = 250;
                 const uint32_t wait_budget_us = 10000;
                 uint32_t waited_us = 0;
+                bool flushed = false;
                 while (waited_us < wait_budget_us && SYSTEM_BUS.available() <= 0)
                 {
                     fnSystem.delay_microseconds(wait_step_us);
                     waited_us += wait_step_us;
                     pace_to_atari(min_gap_us);
+                    if (buf_stream_index >= UDPSTREAM_FLUSH_THRESHOLD ||
+                        (batch_active && (udpstream_time_us() - batch_start_us) >= UDPSTREAM_MAX_BATCH_AGE_US))
+                    {
+                        flush_udp_out_batch();
+                        flushed = true;
+                        break;
+                    }
                 }
+                if (flushed && SYSTEM_BUS.available() > 0)
+                    continue;
                 if (SYSTEM_BUS.available() <= 0)
                     break;
             }
         }
 
-        // Send what we've collected
-        udpStream.beginPacket(udpstream_host_ip, udpstream_port); // remote IP and port
-        udpStream.write(buf_stream, buf_stream_index);
-        udpStream.endPacket();
-
-#ifdef DEBUG_UDPSTREAM
-        Debug_printf("UDP-OUT [%llu ms]: ", (unsigned long long)(udpstream_time_us() / 1000ULL));
-        util_dump_bytes(buf_stream, buf_stream_index);
-#endif
-        buf_stream_index = 0;
-        if (udpstreamIsServer)
-        {
-            // number the outgoing packet for the server to handle sequencing
-            packet_seq += 1;
-            *(uint16_t *)buf_stream = packet_seq;
-            buf_stream_index += 2;
-        }
+        // Send what we've collected after a pause.
+        flush_udp_out_batch();
     }
 
     // Pace again after serial->UDP handling to avoid starving during outbound bursts.

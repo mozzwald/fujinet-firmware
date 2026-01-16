@@ -23,9 +23,11 @@
 #define UDPSTREAM_BUFFER_SIZE 2048
 #define UDPSTREAM_RX_RING_SIZE 2048
 #define UDPSTREAM_PACKET_TIMEOUT 5000
-#define UDPSTREAM_KEEPALIVE_TIMEOUT 250000      // MIDI Keep Alive is 300ms
-#define UDPSTREAM_MIN_GAP_US_MIDI 320           // ~1 byte at 31.25kbps
-#define UDPSTREAM_MIN_GAP_US_SIO 520            // ~1 byte at 19.2kbps
+#define UDPSTREAM_KEEPALIVE_TIMEOUT 250000                      // MIDI Keep Alive is 300ms
+#define UDPSTREAM_MIN_GAP_US_MIDI 320                           // ~1 byte at 31.25kbps
+#define UDPSTREAM_MIN_GAP_US_SIO 520                            // ~1 byte at 19.2kbps
+#define UDPSTREAM_MAX_BATCH_AGE_US 3000                         // Max SIO->UDP batch age before forced flush.
+#define UDPSTREAM_FLUSH_THRESHOLD (UDPSTREAM_BUFFER_SIZE - 16)  // Flush when nearly full.
 #define MIDI_PORT 5004
 #define MIDI_BAUDRATE 31250
 
