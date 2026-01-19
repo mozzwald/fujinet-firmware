@@ -17,6 +17,37 @@ static uint64_t udpstream_time_us()
 #endif
 }
 
+bool sioUDPStream::ensure_tcp_connected()
+{
+    if (udpStream.connected())
+        return true;
+    if (udpstream_host_ip == IPADDR_NONE || udpstream_port <= 0)
+        return false;
+    if (!udpStream.connect(udpstream_host_ip, (uint16_t)udpstream_port))
+    {
+#ifdef DEBUG_UDPSTREAM
+        Debug_println("UDPSTREAM: TCP connect failed");
+#endif
+        return false;
+    }
+    udpStream.setNoDelay(true);
+    if (udpstreamIsServer)
+    {
+        const char* str = "REGISTER";
+        udpStream.write((const uint8_t *)str, strlen(str));
+        packet_seq = 0;
+        buf_stream_index = 0;
+        packet_seq += 1;
+        *(uint16_t *)buf_stream = packet_seq;
+        buf_stream_index = sizeof(packet_seq);
+    }
+    else
+    {
+        buf_stream_index = 0;
+    }
+    return true;
+}
+
 void sioUDPStream::pace_to_atari(uint32_t min_gap_us)
 {
     // Deadline-driven pacing to keep UDP->SIO output moving even when other paths wait.
@@ -80,8 +111,8 @@ void sioUDPStream::sio_enable_udpstream()
         SYSTEM_BUS.setBaudrate(MIDI_BAUDRATE);
     }
 
-    // Open the UDP connection
-    udpStream.begin(udpstream_port);
+    // Open the TCP connection
+    ensure_tcp_connected();
 
     udpstreamActive = true;
     last_rx_us = udpstream_time_us();
@@ -94,19 +125,8 @@ void sioUDPStream::sio_enable_udpstream()
     Debug_println("UDPSTREAM mode ENABLED");
     if (udpstreamIsServer)
     {
-        // Register with the server
+        // Registration handled on TCP connect.
         Debug_println("UDPSTREAM registering with server");
-        const char* str = "REGISTER";
-        memcpy(buf_stream, str, strlen(str));
-        udpStream.beginPacket(udpstream_host_ip, udpstream_port); // remote IP and port
-        udpStream.write(buf_stream, strlen(str));
-        udpStream.endPacket();
-        // number the outgoing packet for the server to handle sequencing
-        packet_seq = 0;
-        buf_stream_index = 0;
-        packet_seq += 1;
-        *(uint16_t *)buf_stream = packet_seq;
-        buf_stream_index += 2;
     }
 }
 
@@ -133,7 +153,6 @@ void sioUDPStream::sio_disable_udpstream()
 void sioUDPStream::sio_handle_udpstream()
 {
     const uint32_t min_gap_us = (udpstream_port == MIDI_PORT) ? UDPSTREAM_MIN_GAP_US_MIDI : UDPSTREAM_MIN_GAP_US_SIO;
-    const uint64_t now_us = udpstream_time_us();
     const size_t base_index = udpstreamIsServer ? sizeof(packet_seq) : 0;
     uint64_t batch_start_us = 0;
     bool batch_active = false;
@@ -143,9 +162,14 @@ void sioUDPStream::sio_handle_udpstream()
         if (buf_stream_index <= base_index)
             return;
 
-        udpStream.beginPacket(udpstream_host_ip, udpstream_port); // remote IP and port
+        if (!ensure_tcp_connected())
+        {
+            buf_stream_index = base_index;
+            batch_active = false;
+            batch_start_us = 0;
+            return;
+        }
         udpStream.write(buf_stream, buf_stream_index);
-        udpStream.endPacket();
 
 #ifdef DEBUG_UDPSTREAM
         Debug_printf("UDP-OUT [%llu ms]: ", (unsigned long long)(udpstream_time_us() / 1000ULL));
@@ -167,47 +191,55 @@ void sioUDPStream::sio_handle_udpstream()
         batch_start_us = 0;
     };
 
-    // if there’s data available, read a packet
-    int packetSize = udpStream.parsePacket();
-    if (packetSize > 0)
+    // if there’s data available, read from the TCP stream
+    if (ensure_tcp_connected())
     {
-        udpStream.read(buf_net, UDPSTREAM_BUFFER_SIZE);
-        // Look for game start in incoming stream (debug only).
-        for (int i = 0; i < packetSize; i++)
+        size_t available = udpStream.available();
+        while (available > 0)
         {
-            if (buf_net[i] == 0x87 && !stream_started)
-            {
-                stream_started = true;
-#ifdef DEBUG_UDPSTREAM
-                Debug_println("UDPSTREAM: 0x87 seen (UDP-IN)");
-#endif
+            size_t to_read = (available > UDPSTREAM_BUFFER_SIZE) ? UDPSTREAM_BUFFER_SIZE : available;
+            int packetSize = udpStream.read(buf_net, to_read);
+            if (packetSize <= 0)
                 break;
-            }
-        }
 
-        // Buffer incoming UDP bytes for paced UART output.
-        for (int i = 0; i < packetSize; i++)
-        {
-            if (rx_count < UDPSTREAM_RX_RING_SIZE)
+            // Look for game start in incoming stream (debug only).
+            for (int i = 0; i < packetSize; i++)
             {
-                rx_ring[rx_head] = buf_net[i];
-                rx_head = (rx_head + 1) % UDPSTREAM_RX_RING_SIZE;
-                rx_count++;
-            }
-            else
-            {
-                // Drop oldest byte to keep the most recent stream data.
-                rx_tail = (rx_tail + 1) % UDPSTREAM_RX_RING_SIZE;
-                rx_ring[rx_head] = buf_net[i];
-                rx_head = (rx_head + 1) % UDPSTREAM_RX_RING_SIZE;
-                rx_drop_count++;
-            }
-        }
-        last_rx_us = now_us;
+                if (buf_net[i] == 0x87 && !stream_started)
+                {
+                    stream_started = true;
 #ifdef DEBUG_UDPSTREAM
-        Debug_printf("UDP-IN [%llu ms]: ", (unsigned long long)(udpstream_time_us() / 1000ULL));
-        util_dump_bytes(buf_net, packetSize);
+                    Debug_println("UDPSTREAM: 0x87 seen (UDP-IN)");
 #endif
+                    break;
+                }
+            }
+
+            // Buffer incoming UDP bytes for paced UART output.
+            for (int i = 0; i < packetSize; i++)
+            {
+                if (rx_count < UDPSTREAM_RX_RING_SIZE)
+                {
+                    rx_ring[rx_head] = buf_net[i];
+                    rx_head = (rx_head + 1) % UDPSTREAM_RX_RING_SIZE;
+                    rx_count++;
+                }
+                else
+                {
+                    // Drop oldest byte to keep the most recent stream data.
+                    rx_tail = (rx_tail + 1) % UDPSTREAM_RX_RING_SIZE;
+                    rx_ring[rx_head] = buf_net[i];
+                    rx_head = (rx_head + 1) % UDPSTREAM_RX_RING_SIZE;
+                    rx_drop_count++;
+                }
+            }
+            last_rx_us = udpstream_time_us();
+#ifdef DEBUG_UDPSTREAM
+            Debug_printf("UDP-IN [%llu ms]: ", (unsigned long long)(udpstream_time_us() / 1000ULL));
+            util_dump_bytes(buf_net, packetSize);
+#endif
+            available = udpStream.available();
+        }
     }
 
     pace_to_atari(min_gap_us);

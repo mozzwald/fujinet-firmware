@@ -8,7 +8,7 @@
 
 #include "bus.h"
 
-#include "fnUDP.h"
+#include "fnTcpClient.h"
 
 #define LEDC_TIMER_RESOLUTION  LEDC_TIMER_1_BIT
 
@@ -34,7 +34,7 @@
 class sioUDPStream : public virtualDevice
 {
 private:
-    fnUDP udpStream;
+    fnTcpClient udpStream;
 
     uint8_t buf_net[UDPSTREAM_BUFFER_SIZE];
     uint8_t buf_stream[UDPSTREAM_BUFFER_SIZE];
@@ -51,6 +51,7 @@ private:
     uint16_t packet_seq = 0;
     uint64_t last_rx_us = 0;
     uint64_t last_tx_us = 0;
+    bool ensure_tcp_connected();
     void pace_to_atari(uint32_t min_gap_us);
     void sio_status() override;
     void sio_process(uint32_t commanddata, uint8_t checksum) override;
