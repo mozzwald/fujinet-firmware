@@ -16,6 +16,7 @@ void fnConfig::store_netstream_port(int port)
 void fnConfig::store_netstream_servermode(bool mode)
 {
     _network.netstream_servermode = mode;
+    _network.netstream_servermode_set = true;
 }
 
 void fnConfig::store_netstream_mode(int mode)
@@ -48,6 +49,7 @@ void fnConfig::_read_section_network(std::stringstream &ss)
             else if (strcasecmp(name.c_str(), "netstream_servermode") == 0)
             {
                 _network.netstream_servermode = util_string_value_is_true(value);
+                _network.netstream_servermode_set = true;
             }
             else if (strcasecmp(name.c_str(), "netstream_mode") == 0)
             {

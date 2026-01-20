@@ -48,6 +48,7 @@ const string fnHttpServiceParser::substitute_tag(const string &tag)
         FN_ROTATION_SOUNDS,
         FN_NETSTREAM_HOST,
         FN_NETSTREAM_MODE,
+        FN_NETSTREAM_SERVERMODE,
         FN_HEAPSIZE,
         FN_SYSSDK,
         FN_SYSCPUREV,
@@ -169,6 +170,7 @@ const string fnHttpServiceParser::substitute_tag(const string &tag)
         "FN_ROTATION_SOUNDS",
         "FN_NETSTREAM_HOST",
         "FN_NETSTREAM_MODE",
+        "FN_NETSTREAM_SERVERMODE",
         "FN_HEAPSIZE",
         "FN_SYSSDK",
         "FN_SYSCPUREV",
@@ -369,6 +371,10 @@ const string fnHttpServiceParser::substitute_tag(const string &tag)
         break;
     case FN_NETSTREAM_MODE:
         resultstream << (Config.get_network_netstream_mode() == 0 ? "udp" : "tcp");
+        break;
+    case FN_NETSTREAM_SERVERMODE:
+        if (Config.get_network_netstream_servermode_set())
+            resultstream << (Config.get_network_netstream_servermode() ? "1" : "0");
         break;
     case FN_HEAPSIZE:
         resultstream << fnSystem.get_free_heap_size();

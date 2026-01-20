@@ -109,7 +109,13 @@ public:
     bool get_general_rotation_sounds() { return _general.rotation_sounds; };
     std::string get_network_netstream_host() { return _network.netstream_host; };
     int get_network_netstream_port() { return _network.netstream_port; };
-    bool get_network_netstream_servermode() { return _network.netstream_servermode; };
+    bool get_network_netstream_servermode()
+    {
+        return _network.netstream_servermode_set
+            ? _network.netstream_servermode
+            : (_network.netstream_mode == 0);
+    };
+    bool get_network_netstream_servermode_set() { return _network.netstream_servermode_set; };
     int get_network_netstream_mode() { return _network.netstream_mode; };
     bool get_general_config_enabled() { return _general.config_enabled; };
     void store_general_devicename(const char *devicename);
@@ -440,6 +446,7 @@ private:
         char netstream_host [64];
         int netstream_port;
         bool netstream_servermode;
+        bool netstream_servermode_set = false;
         int netstream_mode = 1;
     };
 
