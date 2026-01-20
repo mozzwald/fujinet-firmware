@@ -25,7 +25,7 @@ enum fujiCommandID_t {
   FUJICMD_WRITE_HOST_SLOTS           = 0xF3,
   FUJICMD_READ_DEVICE_SLOTS          = 0xF2,
   FUJICMD_WRITE_DEVICE_SLOTS         = 0xF1,
-  FUJICMD_ENABLE_UDPSTREAM           = 0xF0,
+  FUJICMD_ENABLE_NETSTREAM           = 0xF0,
   FUJICMD_SET_BAUDRATE               = 0xEB,
   FUJICMD_GET_WIFI_ENABLED           = 0xEA,
   FUJICMD_UNMOUNT_IMAGE              = 0xE9,

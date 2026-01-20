@@ -54,7 +54,7 @@ union cmdFrame_t
 class systemBus;
 class lynxFuji;     // declare here so can reference it, but define in fuji.h
 class lynxPrinter;
-class lynxUDPStream; // declare here so can reference it, but define in udpstream.h
+class lynxNetStream; // declare here so can reference it, but define in netstream.h
 
 /**
  * @brief Calculate checksum for Comlynx packets. Uses a simple 8-bit XOR of each successive byte.
@@ -249,7 +249,7 @@ private:
     void _comlynx_process_queue();
 
 public:
-    lynxUDPStream *_udpDev = nullptr;
+    lynxNetStream *_udpDev = nullptr;
 
     void setup();
     void service();

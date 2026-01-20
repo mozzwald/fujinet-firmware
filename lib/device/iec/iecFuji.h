@@ -173,7 +173,7 @@ protected:
     void write_device_slots_raw();
 
     // 0xF0
-    void enable_udpstream();
+    void enable_netstream();
 
     // 0xEA
     uint8_t net_get_wifi_enabled();

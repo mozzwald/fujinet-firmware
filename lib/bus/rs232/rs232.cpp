@@ -5,7 +5,7 @@
 #include "../../include/debug.h"
 
 #include "fujiDevice.h"
-#include "udpstream.h"
+#include "netstream.h"
 #include "modem.h"
 #include "siocpm.h"
 
@@ -320,7 +320,7 @@ void systemBus::addDevice(virtualDevice *pDevice, fujiDeviceID_t device_id)
     }
     else if (device_id == FUJI_DEVICEID_MIDI)
     {
-        _udpDev = (rs232UDPStream *)pDevice;
+        _udpDev = (rs232NetStream *)pDevice;
     }
     else if (device_id == FUJI_DEVICEID_CPM)
     {

@@ -1,6 +1,6 @@
 #ifdef BUILD_ATARI
 
-#include "udpstream.h"
+#include "netstream.h"
 
 #include "../../include/debug.h"
 #include "../../include/pinmap.h"
@@ -8,7 +8,7 @@
 #include "fnSystem.h"
 #include "utils.h"
 
-static uint64_t udpstream_time_us()
+static uint64_t netstream_time_us()
 {
 #ifdef ESP_PLATFORM
     return (uint64_t)esp_timer_get_time();
@@ -17,24 +17,26 @@ static uint64_t udpstream_time_us()
 #endif
 }
 
-bool sioUDPStream::ensure_tcp_connected()
+bool sioNetStream::ensure_netstream_ready()
 {
-    if (udpStream.connected())
+    if (netstreamMode == NetStreamMode::UDP)
         return true;
-    if (udpstream_host_ip == IPADDR_NONE || udpstream_port <= 0)
+    if (netStreamTcp.connected())
+        return true;
+    if (netstream_host_ip == IPADDR_NONE || netstream_port <= 0)
         return false;
-    if (!udpStream.connect(udpstream_host_ip, (uint16_t)udpstream_port))
+    if (!netStreamTcp.connect(netstream_host_ip, (uint16_t)netstream_port))
     {
-#ifdef DEBUG_UDPSTREAM
-        Debug_println("UDPSTREAM: TCP connect failed");
+#ifdef DEBUG_NETSTREAM
+        Debug_println("NETSTREAM: TCP connect failed");
 #endif
         return false;
     }
-    udpStream.setNoDelay(true);
-    if (udpstreamIsServer)
+    netStreamTcp.setNoDelay(true);
+    if (netstreamIsServer)
     {
         const char* str = "REGISTER";
-        udpStream.write((const uint8_t *)str, strlen(str));
+        netStreamTcp.write((const uint8_t *)str, strlen(str));
         packet_seq = 0;
         buf_stream_index = 0;
         packet_seq += 1;
@@ -48,27 +50,27 @@ bool sioUDPStream::ensure_tcp_connected()
     return true;
 }
 
-void sioUDPStream::pace_to_atari(uint32_t min_gap_us)
+void sioNetStream::pace_to_atari(uint32_t min_gap_us)
 {
-    // Deadline-driven pacing to keep UDP->SIO output moving even when other paths wait.
+    // Deadline-driven pacing to keep NET->SIO output moving even when other paths wait.
     uint8_t send_count = 0;
     while (rx_count > 0 && send_count < 16)
     {
-        uint64_t now_us = udpstream_time_us();
+        uint64_t now_us = netstream_time_us();
         if ((now_us - last_tx_us) < min_gap_us)
             break;
         uint8_t out = rx_ring[rx_tail];
-        rx_tail = (rx_tail + 1) % UDPSTREAM_RX_RING_SIZE;
+        rx_tail = (rx_tail + 1) % NETSTREAM_RX_RING_SIZE;
         rx_count--;
         SYSTEM_BUS.write(&out, 1);
         last_tx_us += min_gap_us;
         send_count++;
     }
 
-    if (udpstreamKeepaliveEnabled && stream_started && rx_count == 0)
+    if (netstreamKeepaliveEnabled && stream_started && rx_count == 0)
     {
-        uint64_t now_us = udpstream_time_us();
-        if ((now_us - last_tx_us) >= UDPSTREAM_KEEPALIVE_TIMEOUT)
+        uint64_t now_us = netstream_time_us();
+        if ((now_us - last_tx_us) >= NETSTREAM_KEEPALIVE_TIMEOUT)
         {
             uint8_t keepalive = 0x00;
             SYSTEM_BUS.write(&keepalive, 1);
@@ -77,9 +79,9 @@ void sioUDPStream::pace_to_atari(uint32_t min_gap_us)
     }
 }
 
-void sioUDPStream::sio_enable_udpstream()
+void sioNetStream::sio_enable_netstream()
 {
-    if (udpstream_port == MIDI_PORT)
+    if (netstream_port == MIDI_PORT)
     {
 #ifdef ESP_PLATFORM
         // Setup PWM timer for CLOCK IN
@@ -111,29 +113,50 @@ void sioUDPStream::sio_enable_udpstream()
         SYSTEM_BUS.setBaudrate(MIDI_BAUDRATE);
     }
 
-    // Open the TCP connection
-    ensure_tcp_connected();
+    if (netstreamMode == NetStreamMode::UDP)
+    {
+        // Open the UDP connection
+        netStreamUdp.begin(netstream_port);
+        if (netstreamIsServer)
+        {
+            const char* str = "REGISTER";
+            netStreamUdp.beginPacket(netstream_host_ip, netstream_port); // remote IP and port
+            netStreamUdp.write((const uint8_t *)str, strlen(str));
+            netStreamUdp.endPacket();
+            packet_seq = 0;
+            buf_stream_index = 0;
+            packet_seq += 1;
+            *(uint16_t *)buf_stream = packet_seq;
+            buf_stream_index = sizeof(packet_seq);
+        }
+    }
+    else
+    {
+        // Open the TCP connection
+        ensure_netstream_ready();
+    }
 
-    udpstreamActive = true;
-    last_rx_us = udpstream_time_us();
+    netstreamActive = true;
+    last_rx_us = netstream_time_us();
     last_tx_us = last_rx_us;
     stream_started = false;
     rx_head = 0;
     rx_tail = 0;
     rx_count = 0;
     rx_drop_count = 0;
-    Debug_println("UDPSTREAM mode ENABLED");
-    if (udpstreamIsServer)
+    Debug_println("NETSTREAM mode ENABLED");
+    if (netstreamIsServer)
     {
         // Registration handled on TCP connect.
-        Debug_println("UDPSTREAM registering with server");
+        Debug_println("NETSTREAM registering with server");
     }
 }
 
-void sioUDPStream::sio_disable_udpstream()
+void sioNetStream::sio_disable_netstream()
 {
-    udpStream.stop();
-    if (udpstream_port == MIDI_PORT)
+    netStreamTcp.stop();
+    netStreamUdp.stop();
+    if (netstream_port == MIDI_PORT)
     {
 #ifdef ESP_PLATFORM
         ledc_stop(LEDC_ESP32XX_HIGH_SPEED, LEDC_CHANNEL_1, 0);
@@ -145,15 +168,15 @@ void sioUDPStream::sio_disable_udpstream()
     fnSystem.set_pin_mode(PIN_CKI, gpio_mode_t::GPIO_MODE_OUTPUT_OD);
     fnSystem.digital_write(PIN_CKI, DIGI_HIGH);
 #endif
-    udpstreamActive = false;
-    udpstreamIsServer = false;
-    Debug_println("UDPSTREAM mode DISABLED");
+    netstreamActive = false;
+    netstreamIsServer = false;
+    Debug_println("NETSTREAM mode DISABLED");
 }
 
-void sioUDPStream::sio_handle_udpstream()
+void sioNetStream::sio_handle_netstream()
 {
-    const uint32_t min_gap_us = (udpstream_port == MIDI_PORT) ? UDPSTREAM_MIN_GAP_US_MIDI : UDPSTREAM_MIN_GAP_US_SIO;
-    const size_t base_index = udpstreamIsServer ? sizeof(packet_seq) : 0;
+    const uint32_t min_gap_us = (netstream_port == MIDI_PORT) ? NETSTREAM_MIN_GAP_US_MIDI : NETSTREAM_MIN_GAP_US_SIO;
+    const size_t base_index = netstreamIsServer ? sizeof(packet_seq) : 0;
     uint64_t batch_start_us = 0;
     bool batch_active = false;
 
@@ -162,21 +185,37 @@ void sioUDPStream::sio_handle_udpstream()
         if (buf_stream_index <= base_index)
             return;
 
-        if (!ensure_tcp_connected())
+        if (netstreamMode == NetStreamMode::UDP)
         {
-            buf_stream_index = base_index;
-            batch_active = false;
-            batch_start_us = 0;
-            return;
+            if (netstream_host_ip == IPADDR_NONE || netstream_port <= 0)
+            {
+                buf_stream_index = base_index;
+                batch_active = false;
+                batch_start_us = 0;
+                return;
+            }
+            netStreamUdp.beginPacket(netstream_host_ip, netstream_port); // remote IP and port
+            netStreamUdp.write(buf_stream, buf_stream_index);
+            netStreamUdp.endPacket();
         }
-        udpStream.write(buf_stream, buf_stream_index);
+        else
+        {
+            if (!ensure_netstream_ready())
+            {
+                buf_stream_index = base_index;
+                batch_active = false;
+                batch_start_us = 0;
+                return;
+            }
+            netStreamTcp.write(buf_stream, buf_stream_index);
+        }
 
-#ifdef DEBUG_UDPSTREAM
-        Debug_printf("UDP-OUT [%llu ms]: ", (unsigned long long)(udpstream_time_us() / 1000ULL));
+#ifdef DEBUG_NETSTREAM
+        Debug_printf("UDP-OUT [%llu ms]: ", (unsigned long long)(netstream_time_us() / 1000ULL));
         util_dump_bytes(buf_stream, buf_stream_index);
 #endif
 
-        if (udpstreamIsServer)
+        if (netstreamIsServer)
         {
             // number the outgoing packet for the server to handle sequencing
             packet_seq += 1;
@@ -191,14 +230,60 @@ void sioUDPStream::sio_handle_udpstream()
         batch_start_us = 0;
     };
 
-    // if there’s data available, read from the TCP stream
-    if (ensure_tcp_connected())
+    if (netstreamMode == NetStreamMode::UDP)
     {
-        size_t available = udpStream.available();
+        // if there’s data available, read a packet
+        int packetSize = netStreamUdp.parsePacket();
+        if (packetSize > 0)
+        {
+            netStreamUdp.read(buf_net, NETSTREAM_BUFFER_SIZE);
+
+            // Look for game start in incoming stream (debug only).
+            for (int i = 0; i < packetSize; i++)
+            {
+                if (buf_net[i] == 0x87 && !stream_started)
+                {
+                    stream_started = true;
+#ifdef DEBUG_NETSTREAM
+                    Debug_println("NETSTREAM: 0x87 seen (UDP-IN)");
+#endif
+                    break;
+                }
+            }
+
+            // Buffer incoming UDP bytes for paced UART output.
+            for (int i = 0; i < packetSize; i++)
+            {
+                if (rx_count < NETSTREAM_RX_RING_SIZE)
+                {
+                    rx_ring[rx_head] = buf_net[i];
+                    rx_head = (rx_head + 1) % NETSTREAM_RX_RING_SIZE;
+                    rx_count++;
+                }
+                else
+                {
+                    // Drop oldest byte to keep the most recent stream data.
+                    rx_tail = (rx_tail + 1) % NETSTREAM_RX_RING_SIZE;
+                    rx_ring[rx_head] = buf_net[i];
+                    rx_head = (rx_head + 1) % NETSTREAM_RX_RING_SIZE;
+                    rx_drop_count++;
+                }
+            }
+            last_rx_us = netstream_time_us();
+#ifdef DEBUG_NETSTREAM
+            Debug_printf("UDP-IN [%llu ms]: ", (unsigned long long)(netstream_time_us() / 1000ULL));
+            util_dump_bytes(buf_net, packetSize);
+#endif
+        }
+    }
+    else if (ensure_netstream_ready())
+    {
+        // if there’s data available, read from the TCP stream
+        size_t available = netStreamTcp.available();
         while (available > 0)
         {
-            size_t to_read = (available > UDPSTREAM_BUFFER_SIZE) ? UDPSTREAM_BUFFER_SIZE : available;
-            int packetSize = udpStream.read(buf_net, to_read);
+            size_t to_read = (available > NETSTREAM_BUFFER_SIZE) ? NETSTREAM_BUFFER_SIZE : available;
+            int packetSize = netStreamTcp.read(buf_net, to_read);
             if (packetSize <= 0)
                 break;
 
@@ -208,37 +293,37 @@ void sioUDPStream::sio_handle_udpstream()
                 if (buf_net[i] == 0x87 && !stream_started)
                 {
                     stream_started = true;
-#ifdef DEBUG_UDPSTREAM
-                    Debug_println("UDPSTREAM: 0x87 seen (UDP-IN)");
+#ifdef DEBUG_NETSTREAM
+                    Debug_println("NETSTREAM: 0x87 seen (UDP-IN)");
 #endif
                     break;
                 }
             }
 
-            // Buffer incoming UDP bytes for paced UART output.
+            // Buffer incoming TCP bytes for paced UART output.
             for (int i = 0; i < packetSize; i++)
             {
-                if (rx_count < UDPSTREAM_RX_RING_SIZE)
+                if (rx_count < NETSTREAM_RX_RING_SIZE)
                 {
                     rx_ring[rx_head] = buf_net[i];
-                    rx_head = (rx_head + 1) % UDPSTREAM_RX_RING_SIZE;
+                    rx_head = (rx_head + 1) % NETSTREAM_RX_RING_SIZE;
                     rx_count++;
                 }
                 else
                 {
                     // Drop oldest byte to keep the most recent stream data.
-                    rx_tail = (rx_tail + 1) % UDPSTREAM_RX_RING_SIZE;
+                    rx_tail = (rx_tail + 1) % NETSTREAM_RX_RING_SIZE;
                     rx_ring[rx_head] = buf_net[i];
-                    rx_head = (rx_head + 1) % UDPSTREAM_RX_RING_SIZE;
+                    rx_head = (rx_head + 1) % NETSTREAM_RX_RING_SIZE;
                     rx_drop_count++;
                 }
             }
-            last_rx_us = udpstream_time_us();
-#ifdef DEBUG_UDPSTREAM
-            Debug_printf("UDP-IN [%llu ms]: ", (unsigned long long)(udpstream_time_us() / 1000ULL));
+            last_rx_us = netstream_time_us();
+#ifdef DEBUG_NETSTREAM
+            Debug_printf("UDP-IN [%llu ms]: ", (unsigned long long)(netstream_time_us() / 1000ULL));
             util_dump_bytes(buf_net, packetSize);
 #endif
-            available = udpStream.available();
+            available = netStreamTcp.available();
         }
     }
 
@@ -251,15 +336,15 @@ void sioUDPStream::sio_handle_udpstream()
     {
         while (true)
         {
-            // Break out of UDPStream mode if COMMAND is asserted
+            // Break out of NetStream mode if COMMAND is asserted
 #ifdef ESP_PLATFORM
             if (fnSystem.digital_read(PIN_CMD) == DIGI_LOW)
 #else
             if (SYSTEM_BUS.commandAsserted())
 #endif
             {
-                Debug_println("CMD Asserted in LOOP, stopping UDPStream");
-                sio_disable_udpstream();
+                Debug_println("CMD Asserted in LOOP, stopping NetStream");
+                sio_disable_netstream();
                 return;
             }
             if (SYSTEM_BUS.available() > 0)
@@ -269,25 +354,25 @@ void sioUDPStream::sio_handle_udpstream()
                 if (in_byte == 0x87 && !stream_started)
                 {
                     stream_started = true;
-#ifdef DEBUG_UDPSTREAM
-                    Debug_println("UDPSTREAM: 0x87 seen (SIO-OUT)");
+#ifdef DEBUG_NETSTREAM
+                    Debug_println("NETSTREAM: 0x87 seen (SIO-OUT)");
 #endif
                 }
                 if (!batch_active)
                 {
-                    batch_start_us = udpstream_time_us();
+                    batch_start_us = netstream_time_us();
                     batch_active = true;
                 }
                 buf_stream[buf_stream_index] = (unsigned char)in_byte;
-                if (buf_stream_index < UDPSTREAM_BUFFER_SIZE - 1)
+                if (buf_stream_index < NETSTREAM_BUFFER_SIZE - 1)
                     buf_stream_index++;
-                if (buf_stream_index >= UDPSTREAM_FLUSH_THRESHOLD)
+                if (buf_stream_index >= NETSTREAM_FLUSH_THRESHOLD)
                 {
                     // Flush when nearly full to avoid overwrite/drops.
                     flush_udp_out_batch();
                     continue;
                 }
-                if (batch_active && (udpstream_time_us() - batch_start_us) >= UDPSTREAM_MAX_BATCH_AGE_US)
+                if (batch_active && (netstream_time_us() - batch_start_us) >= NETSTREAM_MAX_BATCH_AGE_US)
                 {
                     // Flush old batches even if the stream never pauses.
                     flush_udp_out_batch();
@@ -306,8 +391,8 @@ void sioUDPStream::sio_handle_udpstream()
                     fnSystem.delay_microseconds(wait_step_us);
                     waited_us += wait_step_us;
                     pace_to_atari(min_gap_us);
-                    if (buf_stream_index >= UDPSTREAM_FLUSH_THRESHOLD ||
-                        (batch_active && (udpstream_time_us() - batch_start_us) >= UDPSTREAM_MAX_BATCH_AGE_US))
+                    if (buf_stream_index >= NETSTREAM_FLUSH_THRESHOLD ||
+                        (batch_active && (netstream_time_us() - batch_start_us) >= NETSTREAM_MAX_BATCH_AGE_US))
                     {
                         flush_udp_out_batch();
                         flushed = true;
@@ -329,13 +414,13 @@ void sioUDPStream::sio_handle_udpstream()
     pace_to_atari(min_gap_us);
 }
 
-void sioUDPStream::sio_status()
+void sioNetStream::sio_status()
 {
     // Nothing to do here
     return;
 }
 
-void sioUDPStream::sio_process(uint32_t commanddata, uint8_t checksum)
+void sioNetStream::sio_process(uint32_t commanddata, uint8_t checksum)
 {
     // Nothing to do here
     return;

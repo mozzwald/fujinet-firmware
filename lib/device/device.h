@@ -6,7 +6,7 @@
 # include "sio/cassette.h"
 # include "sio/disk.h"
 # include "sio/pclink.h"
-# include "sio/udpstream.h"
+# include "sio/netstream.h"
 # include "sio/modem.h"
 # include "sio/network.h"
 # include "sio/printer.h"
@@ -17,7 +17,7 @@
 
     sioClock clockDevice;
     sioVoice sioV;
-    sioUDPStream udpDev;
+    sioNetStream udpDev;
     // sioCassette sioC; // now part of sioFuji theFuji object
     modem *sioR;
     sioCPM sioZ;
@@ -87,12 +87,12 @@
 # include "comlynx/printer.h"
 # include "comlynx/printerlist.h"
 # include "comlynx/lynxFuji.h"
-# include "comlynx/udpstream.h"
+# include "comlynx/netstream.h"
 
 //# define NO_VIRTUAL_KEYBOARD
     lynxModem *sioR;
     lynxKeyboard *sioK;
-    lynxUDPStream *udpDev;
+    lynxNetStream *udpDev;
     bool exists = false;
 #endif
 

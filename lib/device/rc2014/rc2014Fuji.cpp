@@ -1408,9 +1408,9 @@ void rc2014Fuji::rc2014_process(uint32_t commanddata, uint8_t checksum)
     //     rs232_ack();
     //     rs232_set_boot_mode();
     //     break;
-    // case FUJICMD_ENABLE_UDPSTREAM:
+    // case FUJICMD_ENABLE_NETSTREAM:
     //     rs232_ack();
-    //     rs232_enable_udpstream();
+    //     rs232_enable_netstream();
     //     break;
     case FUJICMD_ENABLE_DEVICE:
         rc2014_enable_device();

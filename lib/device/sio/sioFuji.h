@@ -20,7 +20,7 @@
 #include "network.h"
 #include "cassette.h"
 #ifndef ESP_PLATFORM // required for FN-PC, causes RAM overflow on ESP32
-#include "udpstream.h"
+#include "netstream.h"
 #endif
 #include "fujiHost.h"
 #include "fujiDisk.h"
@@ -37,7 +37,7 @@ private:
 
     sioCassette _cassetteDev;
 #ifndef ESP_PLATFORM // required for FN-PC, causes RAM overflow on ESP32
-    sioUDPStream _udpDev;
+    sioNetStream _udpDev;
 #endif
     int _current_open_directory_slot = -1;
 
@@ -87,7 +87,7 @@ protected:
     void sio_write_host_slots();       // 0xF3
     void sio_read_device_slots();      // 0xF2
     void sio_write_device_slots();     // 0xF1
-    void sio_enable_udpstream();       // 0xF0
+    void sio_enable_netstream();       // 0xF0
     void sio_net_get_wifi_enabled();   // 0xEA
     void sio_set_baudrate();           // 0xEB
 #ifdef ESP_PLATFORM
@@ -159,7 +159,7 @@ public:
 
     sioCassette *cassette() { return &_cassetteDev; };
 #ifndef ESP_PLATFORM // required for FN-PC, causes RAM overflow on ESP32
-    sioUDPStream *udpStream() { return &_udpDev; };
+    sioNetStream *netStream() { return &_udpDev; };
 #endif
 
     void debug_tape();

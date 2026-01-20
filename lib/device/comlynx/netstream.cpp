@@ -1,5 +1,5 @@
 #ifdef BUILD_LYNX
-#include "udpstream.h"
+#include "netstream.h"
 #include "../../bus/comlynx/comlynx.h"
 
 #include "../../include/debug.h"
@@ -8,30 +8,56 @@
 #include "fnSystem.h"
 #include "utils.h"
 
-//#define DEBUG_UDPSTREAM
+//#define DEBUG_NETSTREAM
 
-void lynxUDPStream::comlynx_enable_udpstream()
+bool lynxNetStream::ensure_tcp_connected()
 {
-    // Open the UDP connection
-    udpStream.begin(udpstream_port);
+    if (netStreamTcp.connected())
+        return true;
+    if (netstream_host_ip == IPADDR_NONE || netstream_port <= 0)
+        return false;
+    if (!netStreamTcp.connect(netstream_host_ip, (uint16_t)netstream_port))
+    {
+#ifdef DEBUG_NETSTREAM
+        Debug_println("NETSTREAM: TCP connect failed");
+#endif
+        return false;
+    }
+    netStreamTcp.setNoDelay(true);
+    return true;
+}
 
-    udpstreamActive = true;
+void lynxNetStream::comlynx_enable_netstream()
+{
+    if (netstreamMode == NetStreamMode::UDP)
+    {
+        // Open the UDP connection
+        netStreamUdp.begin(netstream_port);
+    }
+    else
+    {
+        // Open the TCP connection
+        ensure_tcp_connected();
+    }
+
+    netstreamActive = true;
 #ifdef DEBUG
-    Debug_println("UDPSTREAM mode ENABLED");
+    Debug_println("NETSTREAM mode ENABLED");
 #endif
 }
 
-void lynxUDPStream::comlynx_disable_udpstream()
+void lynxNetStream::comlynx_disable_netstream()
 {
-    udpStream.stop();
-    udpstreamActive = false;
+    netStreamUdp.stop();
+    netStreamTcp.stop();
+    netstreamActive = false;
 #ifdef DEBUG
-    Debug_println("UDPSTREAM mode DISABLED");
+    Debug_println("NETSTREAM mode DISABLED");
 #endif
 }
 
 
-void lynxUDPStream::comlynx_enable_redeye()         // also can be used to reset redeye mode
+void lynxNetStream::comlynx_enable_redeye()         // also can be used to reset redeye mode
 {
     redeye_mode = true;
     redeye_logon = true;
@@ -39,45 +65,59 @@ void lynxUDPStream::comlynx_enable_redeye()         // also can be used to reset
     redeye_players = 0;
 
 #ifdef DEBUG
-    Debug_println("UDPSTREAM redeye mode ENABLED");
+    Debug_println("NETSTREAM redeye mode ENABLED");
 #endif
 }
 
 
-void lynxUDPStream::comlynx_disable_redeye()
+void lynxNetStream::comlynx_disable_redeye()
 {
     redeye_mode = false;
     redeye_logon = true;
 
 #ifdef DEBUG
-    Debug_println("UDPSTREAM redeye mode DISABLED");
+    Debug_println("NETSTREAM redeye mode DISABLED");
 #endif
 }
 
 
-void lynxUDPStream::comlynx_handle_udpstream()
+void lynxNetStream::comlynx_handle_netstream()
 {
     bool good_packet = true;
+    int packetSize = 0;
 
     // if there’s data available, read a packet
-    int packetSize = udpStream.parsePacket();
+    if (netstreamMode == NetStreamMode::UDP)
+    {
+        packetSize = netStreamUdp.parsePacket();
+        if (packetSize > 0)
+            netStreamUdp.read(buf_net, NETSTREAM_BUFFER_SIZE);
+    }
+    else if (ensure_tcp_connected())
+    {
+        size_t available = netStreamTcp.available();
+        if (available > 0)
+        {
+            size_t to_read = (available > NETSTREAM_BUFFER_SIZE) ? NETSTREAM_BUFFER_SIZE : available;
+            packetSize = netStreamTcp.read(buf_net, to_read);
+        }
+    }
+
     if (packetSize > 0)
     {
-        udpStream.read(buf_net, UDPSTREAM_BUFFER_SIZE);
-
         // Lynx Redeye protocol handling
         if (redeye_mode) {
             if (packetSize < 3) {               // check that we have a packet at least 3 bytes
                 good_packet = false;
             #ifdef DEBUG
-                Debug_println("UDPStream Redeye IN - bad packet size < 3");
+                Debug_println("NetStream Redeye IN - bad packet size < 3");
             #endif
             }
             else {
                 if (!comlynx_redeye_checksum(buf_net)) {     // check the checksum
                     good_packet = false;
                 #ifdef DEBUG
-                    Debug_println("UDPStream Redeye IN - checksum failed");
+                    Debug_println("NetStream Redeye IN - checksum failed");
                     util_dump_bytes(buf_net, packetSize);
                 #endif
                 }
@@ -88,7 +128,7 @@ void lynxUDPStream::comlynx_handle_udpstream()
             // Send to Lynx UART
             _comlynx_bus->wait_for_idle();
             SYSTEM_BUS.write(buf_net, packetSize);
-        #ifdef DEBUG_UDPSTREAM
+        #ifdef DEBUG_NETSTREAM
             Debug_print("UDP-IN: ");
             util_dump_bytes(buf_net, packetSize);
         #endif
@@ -114,12 +154,12 @@ void lynxUDPStream::comlynx_handle_udpstream()
                     continue;
                 }
 
-                if (buf_stream_index < UDPSTREAM_BUFFER_SIZE - 1)
+                if (buf_stream_index < NETSTREAM_BUFFER_SIZE - 1)
                     buf_stream_index++;
             }
             else
             {
-                fnSystem.delay_microseconds(UDPSTREAM_PACKET_TIMEOUT);
+                fnSystem.delay_microseconds(NETSTREAM_PACKET_TIMEOUT);
                 if (SYSTEM_BUS.available() <= 0)
                     break;
             }
@@ -133,7 +173,7 @@ void lynxUDPStream::comlynx_handle_udpstream()
         if (redeye_mode) {
             if (buf_stream_index < 3) {     // packets have to be at least three bytes
                 #ifdef DEBUG
-                    Debug_println("UDPStream Redeye OUT - bad packet size < 3");
+                    Debug_println("NetStream Redeye OUT - bad packet size < 3");
                     util_dump_bytes(buf_stream, buf_stream_index);
                 #endif
                 return;                     // bail out
@@ -156,8 +196,8 @@ void lynxUDPStream::comlynx_handle_udpstream()
                         if (buf_stream[1] == 2) {                           // redeye logon phase ending?
                             redeye_logon = false;                           // stop handling logon phase packets
                             #ifdef DEBUG
-                                Debug_println("UDPSTREAM redeye logon phase ending");
-                                Debug_printf("UDPSTREAM redeye game: %d, redeye_players: %d\n", redeye_game, redeye_players);
+                                Debug_println("NETSTREAM redeye logon phase ending");
+                                Debug_printf("NETSTREAM redeye game: %d, redeye_players: %d\n", redeye_game, redeye_players);
                             #endif
                         }
 
@@ -165,17 +205,17 @@ void lynxUDPStream::comlynx_handle_udpstream()
                 }
 
                 #ifdef DEBUG
-                    //Debug_printf("UDPSTREAM redeye_game: %d, redeye_players: %d\n", redeye_game, redeye_players);
+                    //Debug_printf("NETSTREAM redeye_game: %d, redeye_players: %d\n", redeye_game, redeye_players);
                 #endif
 
                 // Send what we've collected over WiFi
-                //udpStream.beginPacket(udpstream_host_ip, udpstream_port); // remote IP and port
-                //udpStream.write(buf_stream, buf_stream_index);
-                //udpStream.endPacket();
+                //netStreamUdp.beginPacket(netstream_host_ip, netstream_port); // remote IP and port
+                //netStreamUdp.write(buf_stream, buf_stream_index);
+                //netStreamUdp.endPacket();
             }
             else {
                 #ifdef DEBUG
-                    Debug_println("UDPSTREAM Redeye OUT - checksum failed");
+                    Debug_println("NETSTREAM Redeye OUT - checksum failed");
                     util_dump_bytes(buf_stream, buf_stream_index);
                 #endif
                 return;
@@ -183,11 +223,20 @@ void lynxUDPStream::comlynx_handle_udpstream()
         }
 
         // Send what we've collected over WiFi
-        udpStream.beginPacket(udpstream_host_ip, udpstream_port); // remote IP and port
-        udpStream.write(buf_stream, buf_stream_index);
-        udpStream.endPacket();
+        if (netstreamMode == NetStreamMode::UDP)
+        {
+            netStreamUdp.beginPacket(netstream_host_ip, netstream_port); // remote IP and port
+            netStreamUdp.write(buf_stream, buf_stream_index);
+            netStreamUdp.endPacket();
+        }
+        else
+        {
+            if (!ensure_tcp_connected())
+                return;
+            netStreamTcp.write(buf_stream, buf_stream_index);
+        }
 
-        #ifdef DEBUG_UDPSTREAM
+        #ifdef DEBUG_NETSTREAM
             Debug_print("UDP-OUT: ");
             util_dump_bytes(buf_stream, buf_stream_index);
         #endif
@@ -203,7 +252,7 @@ void lynxUDPStream::comlynx_handle_udpstream()
 
     Checksum is calculated on size, plus message bytes.
  */
- bool lynxUDPStream::comlynx_redeye_checksum(uint8_t *buf)
+ bool lynxNetStream::comlynx_redeye_checksum(uint8_t *buf)
  {
     uint16_t ck;
     uint8_t i;
@@ -234,7 +283,7 @@ void lynxUDPStream::comlynx_handle_udpstream()
 
     Checksum is calculated on size, plus message bytes.
  */
- void lynxUDPStream::redeye_recalculate_checksum()
+ void lynxNetStream::redeye_recalculate_checksum()
  {
     uint16_t ck;
     uint8_t i;
@@ -269,7 +318,7 @@ void lynxUDPStream::comlynx_handle_udpstream()
  *
  * redeye_game = (buf_stream[4]+(buf_stream[5]<<8));
  */
-void lynxUDPStream::redeye_remap_game_id()
+void lynxNetStream::redeye_remap_game_id()
 {
   uint16_t gid;
 
@@ -286,7 +335,7 @@ void lynxUDPStream::redeye_remap_game_id()
 }
 
 
-void lynxUDPStream::comlynx_process(uint8_t b)
+void lynxNetStream::comlynx_process(uint8_t b)
 {
     // Nothing to do here
     return;

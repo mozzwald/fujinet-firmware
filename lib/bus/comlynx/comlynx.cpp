@@ -4,7 +4,7 @@
  * Comlynx Functions
  */
 #include "comlynx.h"
-#include "udpstream.h"
+#include "netstream.h"
 
 #include "../../include/debug.h"
 
@@ -82,8 +82,8 @@ void virtualDevice::comlynx_send(uint8_t b)
 {
     Debug_printf("comlynx_send_buffer: %X\n", b);
 
-    // Wait for idle only when in UDPStream mode
-    if (SYSTEM_BUS._udpDev->udpstreamActive)
+    // Wait for idle only when in NetStream mode
+    if (SYSTEM_BUS._udpDev->netstreamActive)
         SYSTEM_BUS.wait_for_idle();
 
     // Write the byte
@@ -101,8 +101,8 @@ void virtualDevice::comlynx_send_buffer(uint8_t *buf, unsigned short len)
     //Debug_printf("comlynx_send_buffer: len:%d %0X %0X %0X %0X %0X %0X\n", len, buf[0], buf[1], buf[2], buf[3], buf[4], buf[len-1]);
     Debug_printf("comlynx_send_buffer: len:%d\n", len);
 
-    // Wait for idle only when in UDPStream mode
-    if (SYSTEM_BUS._udpDev->udpstreamActive)
+    // Wait for idle only when in NetStream mode
+    if (SYSTEM_BUS._udpDev->netstreamActive)
         SYSTEM_BUS.wait_for_idle();
 
     SYSTEM_BUS.write(buf, len);
@@ -244,7 +244,7 @@ bool systemBus::wait_for_idle()
 {
     int64_t start, current, dur;
 
-    // SJ notes: we really don't need to do this unless we are in UDPStream mode
+    // SJ notes: we really don't need to do this unless we are in NetStream mode
     // Likely we want to just wait until the bus is "idle" for about 3 character times
     // which is about 0.5 ms at 62500 baud 8N1
     //
@@ -355,8 +355,8 @@ void systemBus::_comlynx_process_queue()
 void systemBus::service()
 {
     // Handle UDP Stream if active
-    if (_udpDev != nullptr && _udpDev->udpstreamActive)
-        _udpDev->comlynx_handle_udpstream();
+    if (_udpDev != nullptr && _udpDev->netstreamActive)
+        _udpDev->comlynx_handle_netstream();
     // Process anything waiting
     else if (SYSTEM_BUS.available() > 0)
         _comlynx_process_cmd();
@@ -376,7 +376,7 @@ void systemBus::setup()
     gpio_isr_handler_add((gpio_num_t)PIN_COMLYNX_RESET, comlynx_reset_isr_handler, (void *)PIN_CARD_DETECT_FIX);
 
     // Set up UDP device
-    _udpDev = new lynxUDPStream();
+    _udpDev = new lynxNetStream();
 
     // Set up UART
     _port.begin(ChannelConfig()
@@ -491,8 +491,8 @@ void systemBus::setUDPHost(const char *hostname, int port)
     // Turn off if hostname is STOP
     if (hostname != nullptr && !strcmp(hostname, "STOP"))
     {
-        if (_udpDev->udpstreamActive)
-            _udpDev->comlynx_disable_udpstream();
+        if (_udpDev->netstreamActive)
+            _udpDev->comlynx_disable_netstream();
 
         return;
     }
@@ -500,36 +500,40 @@ void systemBus::setUDPHost(const char *hostname, int port)
     if (hostname != nullptr && hostname[0] != '\0')
     {
         // Try to resolve the hostname and store that so we don't have to keep looking it up
-        _udpDev->udpstream_host_ip = get_ip4_addr_by_name(hostname);
-        //_udpDev->udpstream_host_ip = IPADDR_NONE;
+        _udpDev->netstream_host_ip = get_ip4_addr_by_name(hostname);
+        //_udpDev->netstream_host_ip = IPADDR_NONE;
 
-        if (_udpDev->udpstream_host_ip == IPADDR_NONE)
+        if (_udpDev->netstream_host_ip == IPADDR_NONE)
         {
             Debug_printf("Failed to resolve hostname \"%s\"\n", hostname);
         }
     }
     else
     {
-        _udpDev->udpstream_host_ip = IPADDR_NONE;
+        _udpDev->netstream_host_ip = IPADDR_NONE;
     }
 
     if (port > 0 && port <= 65535)
     {
-        _udpDev->udpstream_port = port;
+        _udpDev->netstream_port = port;
     }
     else
     {
-        _udpDev->udpstream_port = 5004;
-        Debug_printf("UDPStream port not provided or invalid (%d), setting to 5004\n", port);
+        _udpDev->netstream_port = 5004;
+        Debug_printf("NetStream port not provided or invalid (%d), setting to 5004\n", port);
     }
 
+    _udpDev->netstreamMode = (Config.get_network_netstream_mode() == 0)
+        ? lynxNetStream::NetStreamMode::UDP
+        : lynxNetStream::NetStreamMode::TCP;
+
     // Restart UDP Stream mode if needed
-    if (_udpDev->udpstreamActive) {
-        _udpDev->comlynx_disable_udpstream();
+    if (_udpDev->netstreamActive) {
+        _udpDev->comlynx_disable_netstream();
         _udpDev->comlynx_disable_redeye();
     }
-    if (_udpDev->udpstream_host_ip != IPADDR_NONE) {
-        _udpDev->comlynx_enable_udpstream();
+    if (_udpDev->netstream_host_ip != IPADDR_NONE) {
+        _udpDev->comlynx_enable_netstream();
         if (_udpDev->redeye_mode)
             _udpDev->comlynx_enable_redeye();
     }

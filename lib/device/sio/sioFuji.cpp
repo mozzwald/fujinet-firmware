@@ -2081,7 +2081,7 @@ void sioFuji::insert_boot_device(uint8_t d)
 }
 
 // Set UDP Stream HOST & PORT and start it
-void sioFuji::sio_enable_udpstream()
+void sioFuji::sio_enable_netstream()
 {
     char host[64];
 
@@ -2093,11 +2093,11 @@ void sioFuji::sio_enable_udpstream()
     {
         int port = (cmdFrame.aux1 << 8) | cmdFrame.aux2;
 
-        Debug_printf("Fuji cmd ENABLE UDPSTREAM: HOST:%s PORT: %d\n", host, port);
+        Debug_printf("Fuji cmd ENABLE NETSTREAM: HOST:%s PORT: %d\n", host, port);
 
         // Save the host and port
-        Config.store_udpstream_host(host);
-        Config.store_udpstream_port(port);
+        Config.store_netstream_host(host);
+        Config.store_netstream_port(port);
         Config.save();
 
         sio_complete();
@@ -2676,9 +2676,9 @@ void sioFuji::sio_process(uint32_t commanddata, uint8_t checksum)
         sio_ack();
         sio_set_boot_mode();
         break;
-    case FUJICMD_ENABLE_UDPSTREAM:
+    case FUJICMD_ENABLE_NETSTREAM:
         sio_late_ack();
-        sio_enable_udpstream();
+        sio_enable_netstream();
         break;
     case FUJICMD_QRCODE_INPUT:
         sio_ack();

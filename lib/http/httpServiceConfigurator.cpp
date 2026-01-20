@@ -125,14 +125,14 @@ std::map<std::string, std::string> fnHttpServiceConfigurator::parse_postdata(con
     return results;
 }
 
-/* Activate UDPStream mode after all settings saved */
-void udpstream_activate()
+/* Activate NetStream mode after all settings saved */
+void netstream_activate()
 {
 #ifdef BUILD_ATARI
-    SYSTEM_BUS.setUDPHost(Config.get_network_udpstream_host().c_str(), Config.get_network_udpstream_port());
+    SYSTEM_BUS.setUDPHost(Config.get_network_netstream_host().c_str(), Config.get_network_netstream_port());
 #endif /* ATARI */
 #ifdef BUILD_LYNX
-    SYSTEM_BUS.setUDPHost(Config.get_network_udpstream_host().c_str(), Config.get_network_udpstream_port());
+    SYSTEM_BUS.setUDPHost(Config.get_network_netstream_host().c_str(), Config.get_network_netstream_port());
 #endif /* LYNX */
 }
 
@@ -311,7 +311,7 @@ void fnHttpServiceConfigurator::config_cassette_rewind()
 #endif /* ATARI */
 }
 
-void fnHttpServiceConfigurator::config_udpstream(std::string hostname)
+void fnHttpServiceConfigurator::config_netstream(std::string hostname)
 {
     int port = 0;
     std::string delim = ":";
@@ -319,16 +319,16 @@ void fnHttpServiceConfigurator::config_udpstream(std::string hostname)
     // Turn off if hostname is STOP
     if (hostname.compare("STOP") == 0)
     {
-        Debug_println("UDPStream Stop Request");
+        Debug_println("NetStream Stop Request");
 #ifdef BUILD_ATARI
         SYSTEM_BUS.setUDPHost("STOP", port);
 #endif /* ATARI */
 #ifdef BUILD_LYNX
         SYSTEM_BUS.setUDPHost("STOP", port);
 #endif /* LYNX */
-        Config.store_udpstream_host("");
-        Config.store_udpstream_port(0);
-        Config.store_udpstream_servermode(false);
+        Config.store_netstream_host("");
+        Config.store_netstream_port(0);
+        Config.store_netstream_servermode(false);
         Config.save();
 
         return;
@@ -342,27 +342,38 @@ void fnHttpServiceConfigurator::config_udpstream(std::string hostname)
     // Get the hostname
     std::string newhostname = hostname.substr(0, hostname.find(delim));
 
-    Debug_printf("Set UDPStream host: %s\n", newhostname.c_str());
-    Debug_printf("Set UDPStream port: %d\n", port);
+    Debug_printf("Set NetStream host: %s\n", newhostname.c_str());
+    Debug_printf("Set NetStream port: %d\n", port);
 
     // Update the host ip variable
-    Config.store_udpstream_host(newhostname.c_str());
-    Config.store_udpstream_port(port);
+    Config.store_netstream_host(newhostname.c_str());
+    Config.store_netstream_port(port);
     Config.save();
     udpactivate = true;
 }
 
-void fnHttpServiceConfigurator::config_udpstream_servermode(std::string mode)
+void fnHttpServiceConfigurator::config_netstream_servermode(std::string mode)
 {
     if (util_string_value_is_true(mode))
     {
-        Debug_printf("UDPStream Server Mode Enabled\n");
+        Debug_printf("NetStream Server Mode Enabled\n");
     }
     // Store our change in Config
-    Config.store_udpstream_servermode(util_string_value_is_true(mode));
+    Config.store_netstream_servermode(util_string_value_is_true(mode));
     // Save change
     Config.save();
 
+}
+
+void fnHttpServiceConfigurator::config_netstream_mode(std::string mode)
+{
+    util_string_tolower(mode);
+    int net_mode = (mode == "tcp" || mode == "1") ? 1 : 0;
+
+    Debug_printf("NetStream mode set to %s\n", net_mode == 1 ? "TCP" : "UDP");
+    Config.store_netstream_mode(net_mode);
+    Config.save();
+    udpactivate = true;
 }
 
 int printer_number_from_string(std::string printernumber)
@@ -702,13 +713,17 @@ int fnHttpServiceConfigurator::process_config_post(const char *postdata, size_t 
         {
             config_hostname(i->second);
         }
-        else if (i->first.compare("udpstream_servermode") == 0)
+        else if (i->first.compare("netstream_servermode") == 0)
         {
-            config_udpstream_servermode(i->second);
+            config_netstream_servermode(i->second);
         }
-        else if (i->first.compare("udpstream_host") == 0)
+        else if (i->first.compare("netstream_mode") == 0)
         {
-            config_udpstream(i->second);
+            config_netstream_mode(i->second);
+        }
+        else if (i->first.compare("netstream_host") == 0)
+        {
+            config_netstream(i->second);
         }
         else if (i->first.compare("play_record") == 0)
         {
@@ -819,7 +834,7 @@ int fnHttpServiceConfigurator::process_config_post(const char *postdata, size_t 
     if (udpactivate)
     {
         udpactivate = false;
-        udpstream_activate();
+        netstream_activate();
     }
 
 #if !defined(ESP_PLATFORM) || defined(BUILD_RS232)

@@ -756,11 +756,11 @@
 				</form>
 			</div>
 			{% endif %}
-			{% if components.udp_stream %}
-			<div class="module" {% if components.udp_stream == "experimental" %}data-experimental{% endif %}>
+			{% if components.net_stream %}
+			<div class="module" {% if components.net_stream == "experimental" %}data-experimental{% endif %}>
 				<div class="settings">
 					<div class="settings-header">
-						UDP<span class="logowob"></span>Stream
+						NET<span class="logowob"></span>Stream
 					</div>
 					<div class="settings-left">
 						<div class="svgicon">
@@ -782,7 +782,7 @@
 						<form action="/config" method="post" id="udp-server">
 							<div class="set">
 								<div class="settings-label">
-									<label for="udpstream_servermode">
+									<label for="netstream_servermode">
 										Server or Ring Network?
 										<div class="tooltip">&#9432;
 											<span class="tooltiptext small-text">
@@ -798,19 +798,30 @@
 								</div>
 								<div class="settings-value">
 									<div class="radio-container">
-										<input checked="" id="udpstream_servermode_yes" name="udpstream_servermode" type="radio" value="1">
-										<label for="udpstream_servermode_yes" class="r-yes-no">Server</label>
-										<input checked="" id="udpstream_servermode_no" name="udpstream_servermode" type="radio" value="0">
-										<label for="udpstream_servermode_no" class="r-yes-no">Ring</label>
+										<input checked="" id="netstream_servermode_yes" name="netstream_servermode" type="radio" value="1">
+										<label for="netstream_servermode_yes" class="r-yes-no">Server</label>
+										<input checked="" id="netstream_servermode_no" name="netstream_servermode" type="radio" value="0">
+										<label for="netstream_servermode_no" class="r-yes-no">Ring</label>
 									</div>
 								</div>
 							</div>
 							<div class="set">
+								<div class="settings-label">
+									<label for="select_netstream_mode">Transport</label>
+								</div>
+								<div class="settings-value select">
+									<select name="netstream_mode" id="select_netstream_mode">
+										<option value="udp">UDP</option>
+										<option value="tcp">TCP</option>
+									</select>
+								</div>
+							</div>
+							<div class="set">
 							<div class="settings-label">
-								<label for="udpstream_host">UDPStream: (Hostname or IP:Port)</label>
+								<label for="netstream_host">NetStream: (Hostname or IP:Port)</label>
 							</div>
 							<div class="settings-value">
-								<input type="text" name="udpstream_host" id="udpstream_host" value="<%FN_UDPSTREAM_HOST%>">
+								<input type="text" name="netstream_host" id="netstream_host" value="<%FN_NETSTREAM_HOST%>">
 							</div>
 						</div>
 						</form>
@@ -818,10 +829,10 @@
 						<form action="/config" method="post">
 						<div class="set">
 							<div class="settings-label">
-								<label for="udpstream_host">Press to turn off</label>
+								<label for="netstream_host">Press to turn off</label>
 							</div>
 							<div class="settings-value">
-								<button type="submit" name="udpstream_host" id="udpstream_host" value="STOP">Stop</button>
+								<button type="submit" name="netstream_host" id="netstream_host" value="STOP">Stop</button>
 							</div>
 						</div>
 						</form>
@@ -833,6 +844,9 @@
 								MIDIMaze example: <strong>192.168.0.1</strong> or <strong>192.168.0.1:5004</strong>
 							</div>
 						</div>
+						<script>
+							var current_netstream_mode = "<%FN_NETSTREAM_MODE%>";
+						</script>
 					</div>
 					<div class="settings-footer">
 						<div class="save-button">

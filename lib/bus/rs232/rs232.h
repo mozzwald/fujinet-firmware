@@ -49,7 +49,7 @@ class rs232Modem;    // declare here so can reference it, but define in modem.h
 class rs232Fuji;     // declare here so can reference it, but define in fuji.h
 class systemBus;      // declare early so can be friend
 class rs232Network;  // declare here so can reference it, but define in network.h
-class rs232UDPStream; // declare here so can reference it, but define in udpstream.h
+class rs232NetStream; // declare here so can reference it, but define in netstream.h
 class rs232Cassette; // Cassette forward-declaration.
 class rs232CPM;      // CPM device.
 class rs232Printer;  // Printer device
@@ -190,7 +190,7 @@ private:
     rs232Modem *_modemDev = nullptr;
     rs232Fuji *_fujiDev = nullptr;
     rs232Network *_netDev[8] = {nullptr};
-    rs232UDPStream *_udpDev = nullptr;
+    rs232NetStream *_udpDev = nullptr;
     rs232CPM *_cpmDev = nullptr;
     rs232Printer *_printerdev = nullptr;
 
