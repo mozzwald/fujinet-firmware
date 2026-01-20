@@ -69,6 +69,18 @@ function selectListValue(selectName, currentValue) {
 	}
 }
 
+function updateNetstreamServermodeAvailability() {
+	const modeSelect = document.getElementById("select_netstream_mode");
+	const servermodeSelect = document.getElementById("select_netstream_servermode");
+	if (modeSelect == null || servermodeSelect == null) return;
+
+	const isUdp = modeSelect.value === "udp";
+	const ringOption = servermodeSelect.querySelector('option[value="0"]');
+	if (ringOption != null) {
+		ringOption.disabled = false;
+	}
+}
+
 function setInputValue(isEnabled, idOn, idOff) {
 	const onElement = document.getElementById(idOn)
 	const offElement = document.getElementById(idOff)

@@ -779,32 +779,7 @@
 						</div>
 					</div>
 					<div class="settings-content settings-45-55">
-						<form action="/config" method="post" id="udp-server">
-							<div class="set">
-								<div class="settings-label">
-									<label for="netstream_servermode">
-										Server or Ring Network?
-										<div class="tooltip">&#9432;
-											<span class="tooltiptext small-text">
-												In server mode, each Fujinet connects
-												to the server which forwards packets
-												in a ring. In Ring Net mode, each
-												Fujinet must connect to another and
-												the last one connects to the first
-												forming a virtual ring network.
-											</span>
-										</div>
-									</label>
-								</div>
-								<div class="settings-value">
-									<div class="radio-container">
-										<input checked="" id="netstream_servermode_yes" name="netstream_servermode" type="radio" value="1">
-										<label for="netstream_servermode_yes" class="r-yes-no">Server</label>
-										<input checked="" id="netstream_servermode_no" name="netstream_servermode" type="radio" value="0">
-										<label for="netstream_servermode_no" class="r-yes-no">Ring</label>
-									</div>
-								</div>
-							</div>
+						<form action="/config" method="post" id="netstream-server">
 							<div class="set">
 								<div class="settings-label">
 									<label for="select_netstream_mode">Transport</label>
@@ -813,6 +788,27 @@
 									<select name="netstream_mode" id="select_netstream_mode">
 										<option value="udp">UDP</option>
 										<option value="tcp">TCP</option>
+									</select>
+								</div>
+							</div>
+							<div class="set">
+								<div class="settings-label">
+									<label for="select_netstream_servermode">
+										NetStream Mode
+										<div class="tooltip">&#9432;
+											<span class="tooltiptext small-text">
+												Packet Sequencer (Relay) uses a central
+												relay to forward packets and, for UDP,
+												reorder them if needed. Raw mode sends
+												data without sequencer packet numbering.
+											</span>
+										</div>
+									</label>
+								</div>
+								<div class="settings-value select">
+									<select name="netstream_servermode" id="select_netstream_servermode">
+										<option value="1" selected>Packet Sequencer (Relay)</option>
+										<option value="0">Raw mode</option>
 									</select>
 								</div>
 							</div>
@@ -850,7 +846,7 @@
 					</div>
 					<div class="settings-footer">
 						<div class="save-button">
-							<button onclick="submitForm('udp-server');">Save</button>
+							<button onclick="submitForm('netstream-server');">Save</button>
 						</div>
 					</div>
 				</div>
