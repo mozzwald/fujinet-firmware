@@ -8,6 +8,7 @@
 
 #include "../../include/debug.h"
 
+#include "fnConfig.h"
 #include "fnSystem.h"
 #include "fnDNS.h"
 #include "led.h"
