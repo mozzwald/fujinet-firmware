@@ -5,6 +5,7 @@
 #include "../../include/debug.h"
 #include "../../include/pinmap.h"
 
+#include "cassette.h"
 #include "fnSystem.h"
 #include "utils.h"
 
