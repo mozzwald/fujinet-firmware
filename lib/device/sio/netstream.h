@@ -49,6 +49,7 @@ private:
     uint16_t rx_count = 0;
     uint32_t rx_drop_count = 0;
     bool stream_started = false;
+    bool cassette_was_active = false;
 
     uint16_t packet_seq = 0;
     uint64_t last_rx_us = 0;

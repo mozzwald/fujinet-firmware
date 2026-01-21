@@ -84,6 +84,17 @@ void sioNetStream::pace_to_atari(uint32_t min_gap_us)
 
 void sioNetStream::sio_enable_netstream()
 {
+    if (SYSTEM_BUS.getCassette() != nullptr)
+    {
+        cassette_was_active = SYSTEM_BUS.getCassette()->is_active();
+        if (cassette_was_active)
+            SYSTEM_BUS.getCassette()->sio_disable_cassette();
+    }
+    else
+    {
+        cassette_was_active = false;
+    }
+
     if (netstream_port == MIDI_PORT)
     {
 #ifdef ESP_PLATFORM
@@ -162,6 +173,9 @@ void sioNetStream::sio_disable_netstream()
 {
     netStreamTcp.stop();
     netStreamUdp.stop();
+    if (cassette_was_active && SYSTEM_BUS.getCassette() != nullptr && SYSTEM_BUS.getCassette()->is_mounted())
+        SYSTEM_BUS.getCassette()->sio_enable_cassette();
+    cassette_was_active = false;
     if (netstream_port == MIDI_PORT)
     {
 #ifdef ESP_PLATFORM
