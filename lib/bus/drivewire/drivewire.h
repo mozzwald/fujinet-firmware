@@ -192,7 +192,7 @@ private:
     drivewireModem *_modemDev = nullptr;
     drivewireFuji *_fujiDev = nullptr;
     //drivewireNetwork *_netDev[8] = {nullptr};
-    drivewireNetStream *_udpDev = nullptr;
+    drivewireNetStream *_streamDev = nullptr;
     drivewireCassette *_cassetteDev = nullptr;
     drivewireCPM *_cpmDev = nullptr;
     drivewirePrinter *_printerdev = nullptr;

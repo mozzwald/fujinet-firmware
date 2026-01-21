@@ -190,7 +190,7 @@ private:
     rs232Modem *_modemDev = nullptr;
     rs232Fuji *_fujiDev = nullptr;
     rs232Network *_netDev[8] = {nullptr};
-    rs232NetStream *_udpDev = nullptr;
+    rs232NetStream *_streamDev = nullptr;
     rs232CPM *_cpmDev = nullptr;
     rs232Printer *_printerdev = nullptr;
 

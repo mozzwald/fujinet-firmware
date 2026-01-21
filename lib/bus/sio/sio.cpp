@@ -362,16 +362,23 @@ void systemBus::service()
     // modes disrupt normal SIO handling - should probably make a separate task for this)
     _sio_process_queue();
 
-    if (_udpDev != nullptr && _udpDev->netstreamActive)
+#ifdef ESP_PLATFORM
+    if (_streamDev != nullptr && _streamDev->netstreamActive && fnSystem.digital_read(PIN_MTR) != DIGI_LOW)
+#else
+    //FNPC TODO: How to handle Motor line reading?
+    if (_streamDev != nullptr && _streamDev->netstreamActive)
+#endif
     {
+        if (fnSystem.digital_read(PIN_MTR) != DIGI_LOW)
+            return;
         if (commandAsserted())
         {
             Debug_println("CMD Asserted, stopping UDP Stream");
-            _udpDev->sio_disable_netstream();
+            _streamDev->sio_disable_netstream();
         }
         else
         {
-            _udpDev->sio_handle_netstream();
+            _streamDev->sio_handle_netstream();
             return; // break!
         }
     }
@@ -555,7 +562,7 @@ void systemBus::addDevice(virtualDevice *pDevice, fujiDeviceID_t device_id)
     }
     else if (device_id == FUJI_DEVICEID_MIDI)
     {
-        _udpDev = (sioNetStream *)pDevice;
+        _streamDev = (sioNetStream *)pDevice;
     }
     else if (device_id == FUJI_DEVICEID_CASSETTE)
     {
@@ -751,7 +758,7 @@ void systemBus::sio_empty_ack()
 
 void systemBus::setUDPHost(const char *hostname, int port)
 {
-    if (_udpDev == nullptr)
+    if (_streamDev == nullptr)
     {
         Debug_printf("ERROR: UDP Device is not set. Cannot set HOST/PORT");
         return;
@@ -760,8 +767,8 @@ void systemBus::setUDPHost(const char *hostname, int port)
     // Turn off if hostname is STOP
     if (hostname != nullptr && !strcmp(hostname, "STOP"))
     {
-        if (_udpDev->netstreamActive)
-            _udpDev->sio_disable_netstream();
+        if (_streamDev->netstreamActive)
+            _streamDev->sio_disable_netstream();
 
         return;
     }
@@ -769,40 +776,40 @@ void systemBus::setUDPHost(const char *hostname, int port)
     if (hostname != nullptr && hostname[0] != '\0')
     {
         // Try to resolve the hostname and store that so we don't have to keep looking it up
-        _udpDev->netstream_host_ip = get_ip4_addr_by_name(hostname);
+        _streamDev->netstream_host_ip = get_ip4_addr_by_name(hostname);
 
-        if (_udpDev->netstream_host_ip == IPADDR_NONE)
+        if (_streamDev->netstream_host_ip == IPADDR_NONE)
         {
             Debug_printf("Failed to resolve hostname \"%s\"\n", hostname);
         }
     }
     else
     {
-        _udpDev->netstream_host_ip = IPADDR_NONE;
+        _streamDev->netstream_host_ip = IPADDR_NONE;
     }
 
     if (port > 0 && port <= 65535)
     {
-        _udpDev->netstream_port = port;
+        _streamDev->netstream_port = port;
     }
     else
     {
-        _udpDev->netstream_port = 5004;
+        _streamDev->netstream_port = 5004;
         Debug_printf("NetStream port not provided or invalid (%d), setting to 5004\n", port);
     }
 
     // Set stream mode and server/ring mode
-    _udpDev->netstreamMode = (Config.get_network_netstream_mode() == 0)
+    _streamDev->netstreamMode = (Config.get_network_netstream_mode() == 0)
         ? sioNetStream::NetStreamMode::UDP
         : sioNetStream::NetStreamMode::TCP;
-    _udpDev->netstreamRegisterEnabled = Config.get_network_netstream_register();
-    _udpDev->netstreamIsServer = Config.get_network_netstream_servermode();
+    _streamDev->netstreamRegisterEnabled = Config.get_network_netstream_register();
+    _streamDev->netstreamIsServer = Config.get_network_netstream_servermode();
 
     // Restart UDP Stream mode if needed
-    if (_udpDev->netstreamActive)
-        _udpDev->sio_disable_netstream();
-    if (_udpDev->netstream_host_ip != IPADDR_NONE)
-        _udpDev->sio_enable_netstream();
+    if (_streamDev->netstreamActive)
+        _streamDev->sio_disable_netstream();
+    if (_streamDev->netstream_host_ip != IPADDR_NONE)
+        _streamDev->sio_enable_netstream();
 }
 
 void systemBus::setUltraHigh(bool _enable, int _ultraHighBaud)

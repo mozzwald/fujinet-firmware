@@ -249,7 +249,7 @@ private:
     void _comlynx_process_queue();
 
 public:
-    lynxNetStream *_udpDev = nullptr;
+    lynxNetStream *_streamDev = nullptr;
 
     void setup();
     void service();

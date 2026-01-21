@@ -2134,7 +2134,7 @@ void sioFuji::setup()
     cassette()->set_pulldown(Config.get_cassette_pulldown());
 
 #ifndef ESP_PLATFORM // required for FN-PC, causes RAM overflow on ESP32
-    SYSTEM_BUS.addDevice(&_udpDev, FUJI_DEVICEID_MIDI);
+    SYSTEM_BUS.addDevice(&_streamDev, FUJI_DEVICEID_MIDI);
 #endif
 }
 

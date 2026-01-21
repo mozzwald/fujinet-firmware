@@ -37,7 +37,7 @@ private:
 
     sioCassette _cassetteDev;
 #ifndef ESP_PLATFORM // required for FN-PC, causes RAM overflow on ESP32
-    sioNetStream _udpDev;
+    sioNetStream _streamDev;
 #endif
     int _current_open_directory_slot = -1;
 
@@ -159,7 +159,7 @@ public:
 
     sioCassette *cassette() { return &_cassetteDev; };
 #ifndef ESP_PLATFORM // required for FN-PC, causes RAM overflow on ESP32
-    sioNetStream *netStream() { return &_udpDev; };
+    sioNetStream *netStream() { return &_streamDev; };
 #endif
 
     void debug_tape();

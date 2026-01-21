@@ -226,7 +226,7 @@ private:
     modem *_modemDev = nullptr;
     sioFuji *_fujiDev = nullptr;
     sioNetwork *_netDev[8] = {nullptr};
-    sioNetStream *_udpDev = nullptr;
+    sioNetStream *_streamDev = nullptr;
     sioCassette *_cassetteDev = nullptr;
     sioCPM *_cpmDev = nullptr;
     sioPrinter *_printerdev = nullptr;
