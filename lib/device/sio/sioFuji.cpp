@@ -2080,7 +2080,7 @@ void sioFuji::insert_boot_device(uint8_t d)
     _bootDisk.device_active = false;
 }
 
-// Set UDP Stream HOST & PORT and start it
+// Set NetStream HOST & PORT and start it
 void sioFuji::sio_enable_netstream()
 {
     char host[64];
@@ -2102,8 +2102,8 @@ void sioFuji::sio_enable_netstream()
 
         sio_complete();
 
-        // Start the UDP Stream
-        SYSTEM_BUS.setUDPHost(host, port);
+        // Start the NetStream
+        SYSTEM_BUS.setStreamHost(host, port);
     }
 }
 

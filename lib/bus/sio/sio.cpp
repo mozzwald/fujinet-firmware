@@ -362,18 +362,13 @@ void systemBus::service()
     // modes disrupt normal SIO handling - should probably make a separate task for this)
     _sio_process_queue();
 
-#ifdef ESP_PLATFORM
-    if (_streamDev != nullptr && _streamDev->netstreamActive && fnSystem.digital_read(PIN_MTR) != DIGI_LOW)
-#else
-    //FNPC TODO: How to handle Motor line reading?
+
+//    if (_streamDev != nullptr && _streamDev->netstreamActive && motor_asserted())
     if (_streamDev != nullptr && _streamDev->netstreamActive)
-#endif
     {
-        if (fnSystem.digital_read(PIN_MTR) != DIGI_LOW)
-            return;
         if (commandAsserted())
         {
-            Debug_println("CMD Asserted, stopping UDP Stream");
+            Debug_println("CMD Asserted, stopping NetStream");
             _streamDev->sio_disable_netstream();
         }
         else
@@ -756,7 +751,7 @@ void systemBus::sio_empty_ack()
 }
 #endif
 
-void systemBus::setUDPHost(const char *hostname, int port)
+void systemBus::setStreamHost(const char *hostname, int port)
 {
     if (_streamDev == nullptr)
     {
@@ -805,7 +800,7 @@ void systemBus::setUDPHost(const char *hostname, int port)
     _streamDev->netstreamRegisterEnabled = Config.get_network_netstream_register();
     _streamDev->netstreamIsServer = Config.get_network_netstream_servermode();
 
-    // Restart UDP Stream mode if needed
+    // Restart NetStream mode if needed
     if (_streamDev->netstreamActive)
         _streamDev->sio_disable_netstream();
     if (_streamDev->netstream_host_ip != IPADDR_NONE)

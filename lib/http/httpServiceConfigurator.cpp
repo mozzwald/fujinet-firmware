@@ -129,10 +129,10 @@ std::map<std::string, std::string> fnHttpServiceConfigurator::parse_postdata(con
 void netstream_activate()
 {
 #ifdef BUILD_ATARI
-    SYSTEM_BUS.setUDPHost(Config.get_network_netstream_host().c_str(), Config.get_network_netstream_port());
+    SYSTEM_BUS.setStreamHost(Config.get_network_netstream_host().c_str(), Config.get_network_netstream_port());
 #endif /* ATARI */
 #ifdef BUILD_LYNX
-    SYSTEM_BUS.setUDPHost(Config.get_network_netstream_host().c_str(), Config.get_network_netstream_port());
+    SYSTEM_BUS.setStreamHost(Config.get_network_netstream_host().c_str(), Config.get_network_netstream_port());
 #endif /* LYNX */
 }
 
@@ -321,10 +321,10 @@ void fnHttpServiceConfigurator::config_netstream(std::string hostname)
     {
         Debug_println("NetStream Stop Request");
 #ifdef BUILD_ATARI
-        SYSTEM_BUS.setUDPHost("STOP", port);
+        SYSTEM_BUS.setStreamHost("STOP", port);
 #endif /* ATARI */
 #ifdef BUILD_LYNX
-        SYSTEM_BUS.setUDPHost("STOP", port);
+        SYSTEM_BUS.setStreamHost("STOP", port);
 #endif /* LYNX */
         Config.store_netstream_host("");
         Config.store_netstream_port(0);

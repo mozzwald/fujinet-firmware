@@ -232,7 +232,7 @@ void sioNetStream::sio_handle_netstream()
         }
 
 #ifdef DEBUG_NETSTREAM
-        Debug_printf("UDP-OUT [%llu ms]: ", (unsigned long long)(netstream_time_us() / 1000ULL));
+        Debug_printf("STREAM-OUT [%llu ms]: ", (unsigned long long)(netstream_time_us() / 1000ULL));
         util_dump_bytes(buf_stream, buf_stream_index);
 #endif
 
@@ -266,7 +266,7 @@ void sioNetStream::sio_handle_netstream()
                 {
                     stream_started = true;
 #ifdef DEBUG_NETSTREAM
-                    Debug_println("NETSTREAM: 0x87 seen (UDP-IN)");
+                    Debug_println("NETSTREAM: 0x87 seen (IN)");
 #endif
                     break;
                 }
@@ -292,7 +292,7 @@ void sioNetStream::sio_handle_netstream()
             }
             last_rx_us = netstream_time_us();
 #ifdef DEBUG_NETSTREAM
-            Debug_printf("UDP-IN [%llu ms]: ", (unsigned long long)(netstream_time_us() / 1000ULL));
+            Debug_printf("STREAM-IN [%llu ms]: ", (unsigned long long)(netstream_time_us() / 1000ULL));
             util_dump_bytes(buf_net, packetSize);
 #endif
         }
@@ -315,7 +315,7 @@ void sioNetStream::sio_handle_netstream()
                 {
                     stream_started = true;
 #ifdef DEBUG_NETSTREAM
-                    Debug_println("NETSTREAM: 0x87 seen (UDP-IN)");
+                    Debug_println("NETSTREAM: 0x87 seen (IN)");
 #endif
                     break;
                 }
@@ -341,7 +341,7 @@ void sioNetStream::sio_handle_netstream()
             }
             last_rx_us = netstream_time_us();
 #ifdef DEBUG_NETSTREAM
-            Debug_printf("UDP-IN [%llu ms]: ", (unsigned long long)(netstream_time_us() / 1000ULL));
+            Debug_printf("STREAM-IN [%llu ms]: ", (unsigned long long)(netstream_time_us() / 1000ULL));
             util_dump_bytes(buf_net, packetSize);
 #endif
             available = netStreamTcp.available();

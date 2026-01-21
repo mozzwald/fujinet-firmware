@@ -45,7 +45,7 @@ public:
     bool netstreamActive = false; // If we are in netstream mode or not
     in_addr_t netstream_host_ip = IPADDR_NONE;
     int netstream_port;
-    bool redeye_mode = true;        // redeye UDP stream mode
+    bool redeye_mode = true;        // redeye NetStream mode
     bool redeye_logon = true;       // in redeye logon phase
     uint16_t redeye_game = 0;       // redeye game ID
     uint8_t redeye_players = 0;     // redeye number of players - not sure we need this

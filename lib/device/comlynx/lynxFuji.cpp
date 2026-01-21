@@ -1426,7 +1426,7 @@ void lynxFuji::comlynx_hello()
 
 }
 
-// Set UDP Stream HOST & PORT and start it
+// Set NetStream HOST & PORT and start it
 void lynxFuji::comlynx_enable_netstream(uint16_t s)
 {
     char host[128];
@@ -1460,8 +1460,8 @@ void lynxFuji::comlynx_enable_netstream(uint16_t s)
     Config.store_netstream_port(port);
     Config.save();
 
-    // Start the UDP Stream
-    SYSTEM_BUS.setUDPHost(host, port);
+    // Start the NetStream
+    SYSTEM_BUS.setStreamHost(host, port);
 }
 
 void lynxFuji::comlynx_control_send()

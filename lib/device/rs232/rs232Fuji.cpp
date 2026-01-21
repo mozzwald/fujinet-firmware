@@ -1406,7 +1406,7 @@ void rs232Fuji::insert_boot_device(uint8_t d)
     _bootDisk.device_active = false;
 }
 
-// Set UDP Stream HOST & PORT and start it
+// Set NetStream HOST & PORT and start it
 void rs232Fuji::rs232_enable_netstream()
 {
     char host[64];
@@ -1428,8 +1428,8 @@ void rs232Fuji::rs232_enable_netstream()
 
         rs232_complete();
 
-        // Start the UDP Stream
-        SYSTEM_BUS.setUDPHost(host, port);
+        // Start the NetStream
+        SYSTEM_BUS.setStreamHost(host, port);
     }
 }
 

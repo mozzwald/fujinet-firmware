@@ -355,7 +355,7 @@ void systemBus::_comlynx_process_queue()
 
 void systemBus::service()
 {
-    // Handle UDP Stream if active
+    // Handle NetStream if active
     if (_streamDev != nullptr && _streamDev->netstreamActive)
         _streamDev->comlynx_handle_netstream();
     // Process anything waiting
@@ -487,7 +487,7 @@ void systemBus::disableDevice(fujiDeviceID_t device_id)
         _daisyChain[device_id]->device_active = false;
 }
 
-void systemBus::setUDPHost(const char *hostname, int port)
+void systemBus::setStreamHost(const char *hostname, int port)
 {
     // Turn off if hostname is STOP
     if (hostname != nullptr && !strcmp(hostname, "STOP"))
@@ -528,7 +528,7 @@ void systemBus::setUDPHost(const char *hostname, int port)
         ? lynxNetStream::NetStreamMode::UDP
         : lynxNetStream::NetStreamMode::TCP;
 
-    // Restart UDP Stream mode if needed
+    // Restart NetStream mode if needed
     if (_streamDev->netstreamActive) {
         _streamDev->comlynx_disable_netstream();
         _streamDev->comlynx_disable_redeye();

@@ -432,7 +432,7 @@ int systemBus::getHighSpeedBaud()
     return _rs232BaudHigh;
 }
 
-void systemBus::setUDPHost(const char *hostname, int port)
+void systemBus::setStreamHost(const char *hostname, int port)
 {
 }
 

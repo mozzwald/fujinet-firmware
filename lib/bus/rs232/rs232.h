@@ -228,7 +228,7 @@ public:
     int getHighSpeedIndex();                                    // Gets current HRS232 index
     int getHighSpeedBaud();                                     // Gets current HRS232 baud
 
-    void setUDPHost(const char *newhost, int port);             // Set new host/ip & port for UDP Stream
+    void setStreamHost(const char *newhost, int port);             // Set new host/ip & port for NetStream
     void setUltraHigh(bool _enable, int _ultraHighBaud = 0);    // enable ultrahigh/set baud rate
     bool getUltraHighEnabled() { return useUltraHigh; }
     int getUltraHighBaudRate() { return _rs232BaudUltraHigh; }

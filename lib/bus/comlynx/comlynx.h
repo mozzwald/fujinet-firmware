@@ -278,7 +278,7 @@ public:
     void changeDeviceId(virtualDevice *pDevice, fujiDeviceID_t device_id);
     bool deviceEnabled(fujiDeviceID_t device_id);
     QueueHandle_t qComlynxMessages = nullptr;
-    void setUDPHost(const char *newhost, int port);             // Set new host/ip & port for UDP Stream
+    void setStreamHost(const char *newhost, int port);             // Set new host/ip & port for NetStream
 
     void setRedeyeMode(bool enable);
     void setRedeyeGameRemap(uint32_t remap);
