@@ -376,6 +376,15 @@ void fnHttpServiceConfigurator::config_netstream_mode(std::string mode)
     udpactivate = true;
 }
 
+void fnHttpServiceConfigurator::config_netstream_register(std::string enable)
+{
+    bool is_enabled = util_string_value_is_true(enable);
+    Debug_printf("NetStream REGISTER %s\n", is_enabled ? "enabled" : "disabled");
+    Config.store_netstream_register(is_enabled);
+    Config.save();
+    udpactivate = true;
+}
+
 int printer_number_from_string(std::string printernumber)
 {
     // Take the last char in the 'printernumber' string and turn it into a digit
@@ -720,6 +729,10 @@ int fnHttpServiceConfigurator::process_config_post(const char *postdata, size_t 
         else if (i->first.compare("netstream_mode") == 0)
         {
             config_netstream_mode(i->second);
+        }
+        else if (i->first.compare("netstream_register") == 0)
+        {
+            config_netstream_register(i->second);
         }
         else if (i->first.compare("netstream_host") == 0)
         {

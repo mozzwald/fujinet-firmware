@@ -180,6 +180,7 @@ selectListValue("select_hsioindex", current_hsioindex);
 {% if components.net_stream %}
 selectListValue("select_netstream_mode", current_netstream_mode);
 applyNetstreamServermodeSelection();
+setInputValue(current_netstream_register == 1, "netstream-register-yes", "netstream-register-no");
 attachNetstreamModeHandler();
 {% endif %}
 

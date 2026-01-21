@@ -795,6 +795,7 @@ void systemBus::setUDPHost(const char *hostname, int port)
     _udpDev->netstreamMode = (Config.get_network_netstream_mode() == 0)
         ? sioNetStream::NetStreamMode::UDP
         : sioNetStream::NetStreamMode::TCP;
+    _udpDev->netstreamRegisterEnabled = Config.get_network_netstream_register();
     _udpDev->netstreamIsServer = Config.get_network_netstream_servermode();
 
     // Restart UDP Stream mode if needed

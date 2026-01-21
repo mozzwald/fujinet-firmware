@@ -797,41 +797,60 @@
 										NetStream Mode
 										<div class="tooltip">&#9432;
 											<span class="tooltiptext small-text">
-												Packet Sequencer (Relay) uses a central
-												relay to forward packets and, for UDP,
-												reorder them if needed. Raw mode sends
-												data without sequencer packet numbering.
+												<strong>Packet Sequencer</strong> adds sequential numbering
+												to each packet sent out (recommended for
+												UDP relay servers so they can reorder them
+												if needed). <strong>Raw</strong> mode sends data without
+												sequential packet numbering.
 											</span>
 										</div>
 									</label>
 								</div>
 								<div class="settings-value select">
 									<select name="netstream_servermode" id="select_netstream_servermode">
-										<option value="1" selected>Packet Sequencer (Relay)</option>
+										<option value="1" selected>Packet Sequencer</option>
 										<option value="0">Raw mode</option>
 									</select>
 								</div>
 							</div>
 							<div class="set">
-							<div class="settings-label">
-								<label for="netstream_host">NetStream: (Hostname or IP:Port)</label>
+								<div class="settings-label">
+									<label for="netstream_register">Send REGISTER?
+										<div class="tooltip">&#9432;
+											<span class="tooltiptext small-text">
+												If enabled, this will send the text
+												"REGISTER" after connection established
+												which can be used with a server to 
+												identify a FujiNet has connected.
+											</span>
+										</div>
+									</label>
+								</div>
+								<div class="settings-value">
+									<div class="radio-container">
+										<input checked="" id="netstream-register-yes" name="netstream_register" type="radio" value="1">
+										<label for="netstream-register-yes" class="r-yes-no">Yes</label>
+										<input checked="" id="netstream-register-no" name="netstream_register" type="radio" value="0">
+										<label for="netstream-register-no" class="r-yes-no">No</label>
+									</div>
+								</div>
 							</div>
-							<div class="settings-value">
-								<input type="text" name="netstream_host" id="netstream_host" value="<%FN_NETSTREAM_HOST%>">
+							<div class="set">
+								<div class="settings-label">
+									<label for="netstream_host">NetStream: (Hostname or IP:Port)</label>
+								</div>
+								<div class="settings-value">
+									<input type="text" name="netstream_host" id="netstream_host" value="<%FN_NETSTREAM_HOST%>">
+								</div>
 							</div>
-						</div>
+							<div class="set">
+								<div class="settings-label">Press to start stream</div>
+								<div class="settings-value">
+									<button onclick="submitForm('netstream-server');">Save</button>
+								</div>
+							</div>
 						</form>
 
-						<form action="/config" method="post">
-						<div class="set">
-							<div class="settings-label">
-								<label for="netstream_host">Press to turn off</label>
-							</div>
-							<div class="settings-value">
-								<button type="submit" name="netstream_host" id="netstream_host" value="STOP">Stop</button>
-							</div>
-						</div>
-						</form>
 						<hr>
 						<div class="settings-text">
 							<div>
@@ -843,12 +862,20 @@
 						<script>
 							var current_netstream_mode = "<%FN_NETSTREAM_MODE%>";
 							var current_netstream_servermode = "<%FN_NETSTREAM_SERVERMODE%>";
+							var current_netstream_register = "<%FN_NETSTREAM_REGISTER%>";
 						</script>
 					</div>
 					<div class="settings-footer">
-						<div class="save-button">
-							<button onclick="submitForm('netstream-server');">Save</button>
+						<form action="/config" method="post">
+						<div class="set">
+							<div class="settings-label">
+								<label for="netstream_host">Press to turn off</label>
+							</div>
+							<div class="settings-value">
+								<button type="submit" name="netstream_host" id="netstream_host" value="STOP">Stop</button>
+							</div>
 						</div>
+						</form>
 					</div>
 				</div>
 			</div>

@@ -116,6 +116,7 @@ public:
             : (_network.netstream_mode == 0);
     };
     bool get_network_netstream_servermode_set() { return _network.netstream_servermode_set; };
+    bool get_network_netstream_register() { return _network.netstream_register; };
     int get_network_netstream_mode() { return _network.netstream_mode; };
     bool get_general_config_enabled() { return _general.config_enabled; };
     void store_general_devicename(const char *devicename);
@@ -132,6 +133,7 @@ public:
     void store_netstream_host(const char host_ip[64]);
     void store_netstream_port(int port);
     void store_netstream_servermode(bool mode);
+    void store_netstream_register(bool enable);
     void store_netstream_mode(int mode);
     bool get_general_fnconfig_spifs() { return _general.fnconfig_spifs; };
     void store_general_fnconfig_spifs(bool fnconfig_spifs);
@@ -447,6 +449,7 @@ private:
         int netstream_port;
         bool netstream_servermode;
         bool netstream_servermode_set = false;
+        bool netstream_register = true;
         int netstream_mode = 1;
     };
 

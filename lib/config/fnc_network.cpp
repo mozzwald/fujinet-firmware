@@ -19,6 +19,11 @@ void fnConfig::store_netstream_servermode(bool mode)
     _network.netstream_servermode_set = true;
 }
 
+void fnConfig::store_netstream_register(bool enable)
+{
+    _network.netstream_register = enable;
+}
+
 void fnConfig::store_netstream_mode(int mode)
 {
     _network.netstream_mode = mode;
@@ -56,6 +61,10 @@ void fnConfig::_read_section_network(std::stringstream &ss)
                 std::string mode_value = value;
                 util_string_tolower(mode_value);
                 _network.netstream_mode = (mode_value == "tcp" || mode_value == "1") ? 1 : 0;
+            }
+            else if (strcasecmp(name.c_str(), "netstream_register") == 0)
+            {
+                _network.netstream_register = util_string_value_is_true(value);
             }
         }
     }

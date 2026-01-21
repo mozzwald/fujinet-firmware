@@ -49,6 +49,7 @@ const string fnHttpServiceParser::substitute_tag(const string &tag)
         FN_NETSTREAM_HOST,
         FN_NETSTREAM_MODE,
         FN_NETSTREAM_SERVERMODE,
+        FN_NETSTREAM_REGISTER,
         FN_HEAPSIZE,
         FN_SYSSDK,
         FN_SYSCPUREV,
@@ -171,6 +172,7 @@ const string fnHttpServiceParser::substitute_tag(const string &tag)
         "FN_NETSTREAM_HOST",
         "FN_NETSTREAM_MODE",
         "FN_NETSTREAM_SERVERMODE",
+        "FN_NETSTREAM_REGISTER",
         "FN_HEAPSIZE",
         "FN_SYSSDK",
         "FN_SYSCPUREV",
@@ -375,6 +377,9 @@ const string fnHttpServiceParser::substitute_tag(const string &tag)
     case FN_NETSTREAM_SERVERMODE:
         if (Config.get_network_netstream_servermode_set())
             resultstream << (Config.get_network_netstream_servermode() ? "1" : "0");
+        break;
+    case FN_NETSTREAM_REGISTER:
+        resultstream << (Config.get_network_netstream_register() ? "1" : "0");
         break;
     case FN_HEAPSIZE:
         resultstream << fnSystem.get_free_heap_size();

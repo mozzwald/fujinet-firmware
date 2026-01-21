@@ -82,6 +82,7 @@ void fnConfig::save()
     if (_network.netstream_servermode_set)
         ss << "netstream_servermode=" << _network.netstream_servermode << LINETERM;
     ss << "netstream_mode=" << _network.netstream_mode << LINETERM;
+    ss << "netstream_register=" << _network.netstream_register << LINETERM;
 
     // HOSTS
     for (i = 0; i < MAX_HOST_SLOTS; i++)

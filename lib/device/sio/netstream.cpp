@@ -33,10 +33,13 @@ bool sioNetStream::ensure_netstream_ready()
         return false;
     }
     netStreamTcp.setNoDelay(true);
-    if (netstreamIsServer)
+    if (netstreamRegisterEnabled)
     {
         const char* str = "REGISTER";
         netStreamTcp.write((const uint8_t *)str, strlen(str));
+    }
+    if (netstreamIsServer)
+    {
         packet_seq = 0;
         buf_stream_index = 0;
         packet_seq += 1;
@@ -117,12 +120,15 @@ void sioNetStream::sio_enable_netstream()
     {
         // Open the UDP connection
         netStreamUdp.begin(netstream_port);
-        if (netstreamIsServer)
+        if (netstreamRegisterEnabled)
         {
             const char* str = "REGISTER";
             netStreamUdp.beginPacket(netstream_host_ip, netstream_port); // remote IP and port
             netStreamUdp.write((const uint8_t *)str, strlen(str));
             netStreamUdp.endPacket();
+        }
+        if (netstreamIsServer)
+        {
             packet_seq = 0;
             buf_stream_index = 0;
             packet_seq += 1;

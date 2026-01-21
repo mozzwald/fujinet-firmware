@@ -18,6 +18,7 @@ class fnHttpServiceConfigurator
     static void config_netstream(std::string host_ip);
     static void config_netstream_servermode(std::string mode);
     static void config_netstream_mode(std::string mode);
+    static void config_netstream_register(std::string enable);
     static void config_cassette_play(std::string play_record);
     static void config_cassette_resistor(std::string resistor);
     static void config_cassette_rewind();
