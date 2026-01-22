@@ -363,8 +363,7 @@ void systemBus::service()
     _sio_process_queue();
 
 
-//    if (_streamDev != nullptr && _streamDev->netstreamActive && motor_asserted())
-    if (_streamDev != nullptr && _streamDev->netstreamActive)
+    if (_streamDev != nullptr && _streamDev->netstreamActive && motor_asserted())
     {
         if (commandAsserted())
         {
@@ -753,6 +752,19 @@ void systemBus::sio_empty_ack()
 
 void systemBus::setStreamHost(const char *hostname, int port)
 {
+    setStreamHostWithOptions(
+        hostname,
+        port,
+        (Config.get_network_netstream_mode() == 0) ? 0 : 1,
+        Config.get_network_netstream_register(),
+        Config.get_network_netstream_servermode());
+}
+
+void systemBus::setStreamHostWithOptions(const char *hostname, int port,
+                                         int mode,
+                                         bool register_enabled,
+                                         bool server_mode)
+{
     if (_streamDev == nullptr)
     {
         Debug_printf("ERROR: UDP Device is not set. Cannot set HOST/PORT");
@@ -794,11 +806,11 @@ void systemBus::setStreamHost(const char *hostname, int port)
     }
 
     // Set stream mode and server/ring mode
-    _streamDev->netstreamMode = (Config.get_network_netstream_mode() == 0)
+    _streamDev->netstreamMode = (mode == 0)
         ? sioNetStream::NetStreamMode::UDP
         : sioNetStream::NetStreamMode::TCP;
-    _streamDev->netstreamRegisterEnabled = Config.get_network_netstream_register();
-    _streamDev->netstreamIsServer = Config.get_network_netstream_servermode();
+    _streamDev->netstreamRegisterEnabled = register_enabled;
+    _streamDev->netstreamIsServer = server_mode;
 
     // Restart NetStream mode if needed
     if (_streamDev->netstreamActive)

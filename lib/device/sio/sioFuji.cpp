@@ -28,6 +28,7 @@
 #include "fsFlash.h"
 #include "fnFsTNFS.h"
 #include "fnWiFi.h"
+#include "netstream.h"
 
 #include "led.h"
 #include "utils.h"
@@ -2091,19 +2092,67 @@ void sioFuji::sio_enable_netstream()
         sio_error();
     else
     {
+        const char *host_start = host;
+        size_t host_len = 0;
+        bool has_prefix = false;
+        bool has_flags = false;
+        uint8_t flags = 0;
+        bool register_enabled = false;
+        bool server_mode = false;
+        int stream_mode = 0;
+        char host_out[64];
+
+        const char *nul = (const char *)memchr(host, '\0', sizeof(host));
+        host_len = nul ? (size_t)(nul - host) : sizeof(host);
+
+        if (host_len >= 4 && memcmp(host, "tcp:", 4) == 0)
+        {
+            has_prefix = true;
+            stream_mode = 1;
+            host_start = host + 4;
+            host_len = (host_len >= 4) ? (host_len - 4) : 0;
+        }
+        else if (host_len >= 4 && memcmp(host, "udp:", 4) == 0)
+        {
+            has_prefix = true;
+            stream_mode = 0;
+            host_start = host + 4;
+            host_len = (host_len >= 4) ? (host_len - 4) : 0;
+        }
+
+        if (has_prefix && nul != nullptr && (size_t)(nul - host + 1) < sizeof(host))
+        {
+            flags = (uint8_t)host[(nul - host) + 1];
+            has_flags = true;
+        }
+
+        if (has_flags)
+        {
+            stream_mode = (flags & 0x01) ? 1 : 0;
+            register_enabled = (flags & 0x02) != 0;
+            server_mode = (flags & 0x04) != 0;
+        }
+        else if (!has_prefix)
+        {
+            stream_mode = 0;
+            register_enabled = false;
+            server_mode = false;
+        }
+
+        size_t copy_len = host_len;
+        if (copy_len > sizeof(host_out) - 1)
+            copy_len = sizeof(host_out) - 1;
+        memcpy(host_out, host_start, copy_len);
+        host_out[copy_len] = '\0';
+
         int port = (cmdFrame.aux1 << 8) | cmdFrame.aux2;
 
-        Debug_printf("Fuji cmd ENABLE NETSTREAM: HOST:%s PORT: %d\n", host, port);
-
-        // Save the host and port
-        Config.store_netstream_host(host);
-        Config.store_netstream_port(port);
-        Config.save();
+        Debug_printf("Fuji cmd ENABLE NETSTREAM: HOST:%s PORT: %d\n", host_out, port);
 
         sio_complete();
 
         // Start the NetStream
-        SYSTEM_BUS.setStreamHost(host, port);
+        SYSTEM_BUS.setStreamHostWithOptions(host_out, port, stream_mode, register_enabled, server_mode);
     }
 }
 
