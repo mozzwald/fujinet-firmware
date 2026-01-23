@@ -2148,6 +2148,18 @@ void sioFuji::sio_enable_netstream()
         int port = (cmdFrame.aux1 << 8) | cmdFrame.aux2;
 
         Debug_printf("Fuji cmd ENABLE NETSTREAM: HOST:%s PORT: %d\n", host_out, port);
+#ifdef DEBUG_NETSTREAM
+        Debug_printf("NETSTREAM opts: transport=%s register=%s mode=%s\n",
+                     (stream_mode == 0) ? "udp" : "tcp",
+                     register_enabled ? "on" : "off",
+                     server_mode ? "sequencer" : "raw");
+#endif
+        Config.store_netstream_host(host_out);
+        Config.store_netstream_port(port);
+        Config.store_netstream_mode(stream_mode);
+        Config.store_netstream_register(register_enabled);
+        Config.store_netstream_servermode(server_mode);
+        Config.save();
 
         sio_complete();
 

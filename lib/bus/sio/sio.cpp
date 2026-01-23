@@ -372,6 +372,11 @@ void systemBus::service()
         }
         else
         {
+            if (SYSTEM_BUS.getBaudrate() != MIDI_BAUDRATE)
+            {
+                // ensure MIDI baud for NetStream since a cmd frame could change it
+                SYSTEM_BUS.setBaudrate(MIDI_BAUDRATE);
+            }
             _streamDev->sio_handle_netstream();
             return; // break!
         }
