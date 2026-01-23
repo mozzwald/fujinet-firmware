@@ -56,7 +56,7 @@ bool sioNetStream::ensure_netstream_ready()
 
 void sioNetStream::pace_to_atari(uint32_t min_gap_us)
 {
-    // Deadline-driven pacing to keep NET->SIO output moving even when other paths wait.
+    // Pacing to keep NET->SIO output moving even when other paths wait.
     uint8_t send_count = 0;
     while (rx_count > 0 && send_count < 16)
     {
@@ -70,21 +70,11 @@ void sioNetStream::pace_to_atari(uint32_t min_gap_us)
         last_tx_us += min_gap_us;
         send_count++;
     }
-
-    if (netstreamKeepaliveEnabled && stream_started && rx_count == 0)
-    {
-        uint64_t now_us = netstream_time_us();
-        if ((now_us - last_tx_us) >= NETSTREAM_KEEPALIVE_TIMEOUT)
-        {
-            uint8_t keepalive = 0x00;
-            SYSTEM_BUS.write(&keepalive, 1);
-            last_tx_us = now_us;
-        }
-    }
 }
 
 void sioNetStream::sio_enable_netstream()
 {
+    // Disable cassette so it doesn't interfere with SIO Motor Control toggle
     if (SYSTEM_BUS.getCassette() != nullptr)
     {
         cassette_was_active = SYSTEM_BUS.getCassette()->is_active();
@@ -157,7 +147,6 @@ void sioNetStream::sio_enable_netstream()
     netstreamActive = true;
     last_rx_us = netstream_time_us();
     last_tx_us = last_rx_us;
-    stream_started = false;
     rx_head = 0;
     rx_tail = 0;
     rx_count = 0;
@@ -177,13 +166,10 @@ void sioNetStream::sio_disable_netstream()
     if (cassette_was_active && SYSTEM_BUS.getCassette() != nullptr && SYSTEM_BUS.getCassette()->is_mounted())
         SYSTEM_BUS.getCassette()->sio_enable_cassette();
     cassette_was_active = false;
-    if (netstream_port == MIDI_PORT)
-    {
 #ifdef ESP_PLATFORM
         ledc_stop(LEDC_ESP32XX_HIGH_SPEED, LEDC_CHANNEL_1, 0);
 #endif
         SYSTEM_BUS.setBaudrate(SIO_STANDARD_BAUDRATE);
-    }
 #ifdef ESP_PLATFORM
     // Reset CKI pin back to output open drain high
     fnSystem.set_pin_mode(PIN_CKI, gpio_mode_t::GPIO_MODE_OUTPUT_OD);
@@ -259,19 +245,6 @@ void sioNetStream::sio_handle_netstream()
         {
             netStreamUdp.read(buf_net, NETSTREAM_BUFFER_SIZE);
 
-            // Look for game start in incoming stream (debug only).
-            for (int i = 0; i < packetSize; i++)
-            {
-                if (buf_net[i] == 0x87 && !stream_started)
-                {
-                    stream_started = true;
-#ifdef DEBUG_NETSTREAM
-                    Debug_println("NETSTREAM: 0x87 seen (IN)");
-#endif
-                    break;
-                }
-            }
-
             // Buffer incoming UDP bytes for paced UART output.
             for (int i = 0; i < packetSize; i++)
             {
@@ -308,19 +281,6 @@ void sioNetStream::sio_handle_netstream()
             if (packetSize <= 0)
                 break;
 
-            // Look for game start in incoming stream (debug only).
-            for (int i = 0; i < packetSize; i++)
-            {
-                if (buf_net[i] == 0x87 && !stream_started)
-                {
-                    stream_started = true;
-#ifdef DEBUG_NETSTREAM
-                    Debug_println("NETSTREAM: 0x87 seen (IN)");
-#endif
-                    break;
-                }
-            }
-
             // Buffer incoming TCP bytes for paced UART output.
             for (int i = 0; i < packetSize; i++)
             {
@@ -350,8 +310,6 @@ void sioNetStream::sio_handle_netstream()
 
     pace_to_atari(min_gap_us);
 
-    // Keepalive disabled for now to avoid desync during setup.
-
     // Read the data until there's a pause in the incoming stream
     if (SYSTEM_BUS.available() > 0)
     {
@@ -364,7 +322,7 @@ void sioNetStream::sio_handle_netstream()
             if (SYSTEM_BUS.commandAsserted())
 #endif
             {
-                Debug_println("CMD Asserted in LOOP, stopping NetStream");
+                Debug_println("CMD Asserted, stopping NetStream");
                 sio_disable_netstream();
                 return;
             }
@@ -372,13 +330,6 @@ void sioNetStream::sio_handle_netstream()
             {
                 // Collect bytes read in our buffer
                 int in_byte = SYSTEM_BUS.read(); // TODO apc: check for error first
-                if (in_byte == 0x87 && !stream_started)
-                {
-                    stream_started = true;
-#ifdef DEBUG_NETSTREAM
-                    Debug_println("NETSTREAM: 0x87 seen (SIO-OUT)");
-#endif
-                }
                 if (!batch_active)
                 {
                     batch_start_us = netstream_time_us();

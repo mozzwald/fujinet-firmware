@@ -24,7 +24,6 @@
 #define NETSTREAM_BUFFER_SIZE 2048
 #define NETSTREAM_RX_RING_SIZE 2048
 #define NETSTREAM_PACKET_TIMEOUT 5000
-#define NETSTREAM_KEEPALIVE_TIMEOUT 250000                      // MIDI Keep Alive is 300ms
 #define NETSTREAM_MIN_GAP_US_MIDI 320                           // ~1 byte at 31.25kbps
 #define NETSTREAM_MIN_GAP_US_SIO 520                            // ~1 byte at 19.2kbps
 #define NETSTREAM_MAX_BATCH_AGE_US 3000                         // Max SIO->NET batch age before forced flush.
@@ -48,7 +47,6 @@ private:
     uint16_t rx_tail = 0;
     uint16_t rx_count = 0;
     uint32_t rx_drop_count = 0;
-    bool stream_started = false;
     bool cassette_was_active = false;
 
     uint16_t packet_seq = 0;
@@ -68,7 +66,6 @@ public:
 
     bool netstreamActive = false; // If we are in netstream mode or not
     bool netstreamIsServer = false; // If we are connecting to a server
-    bool netstreamKeepaliveEnabled = false; // Enable 0x00 keepalive injection after 0x87
     bool netstreamRegisterEnabled = true; // Send REGISTER on connect
     NetStreamMode netstreamMode = NetStreamMode::TCP;
     in_addr_t netstream_host_ip = IPADDR_NONE;
