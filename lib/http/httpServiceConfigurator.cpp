@@ -328,7 +328,6 @@ void fnHttpServiceConfigurator::config_netstream(std::string hostname)
 #endif /* LYNX */
         Config.store_netstream_host("");
         Config.store_netstream_port(0);
-        Config.store_netstream_servermode(false);
         Config.save();
 
         return;
@@ -350,19 +349,6 @@ void fnHttpServiceConfigurator::config_netstream(std::string hostname)
     Config.store_netstream_port(port);
     Config.save();
     udpactivate = true;
-}
-
-void fnHttpServiceConfigurator::config_netstream_servermode(std::string mode)
-{
-    if (util_string_value_is_true(mode))
-    {
-        Debug_printf("NetStream Server Mode Enabled\n");
-    }
-    // Store our change in Config
-    Config.store_netstream_servermode(util_string_value_is_true(mode));
-    // Save change
-    Config.save();
-
 }
 
 void fnHttpServiceConfigurator::config_netstream_mode(std::string mode)
@@ -721,10 +707,6 @@ int fnHttpServiceConfigurator::process_config_post(const char *postdata, size_t 
         else if (i->first.compare("hostname") == 0)
         {
             config_hostname(i->second);
-        }
-        else if (i->first.compare("netstream_servermode") == 0)
-        {
-            config_netstream_servermode(i->second);
         }
         else if (i->first.compare("netstream_mode") == 0)
         {

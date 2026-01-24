@@ -793,28 +793,6 @@
 							</div>
 							<div class="set">
 								<div class="settings-label">
-									<label for="select_netstream_servermode">
-										NetStream Mode
-										<div class="tooltip">&#9432;
-											<span class="tooltiptext small-text">
-												<strong>Packet Sequencer</strong> adds sequential numbering
-												to each packet sent out (recommended for
-												UDP relay servers so they can reorder them
-												if needed). <strong>Raw</strong> mode sends data without
-												sequential packet numbering.
-											</span>
-										</div>
-									</label>
-								</div>
-								<div class="settings-value select">
-									<select name="netstream_servermode" id="select_netstream_servermode">
-										<option value="1" selected>Packet Sequencer</option>
-										<option value="0">Raw mode</option>
-									</select>
-								</div>
-							</div>
-							<div class="set">
-								<div class="settings-label">
 									<label for="netstream_register">Send REGISTER?
 										<div class="tooltip">&#9432;
 											<span class="tooltiptext small-text">
@@ -861,7 +839,6 @@
 						</div>
 						<script>
 							var current_netstream_mode = "<%FN_NETSTREAM_MODE%>";
-							var current_netstream_servermode = "<%FN_NETSTREAM_SERVERMODE%>";
 							var current_netstream_register = "<%FN_NETSTREAM_REGISTER%>";
 						</script>
 					</div>

@@ -761,14 +761,12 @@ void systemBus::setStreamHost(const char *hostname, int port)
         hostname,
         port,
         (Config.get_network_netstream_mode() == 0) ? 0 : 1,
-        Config.get_network_netstream_register(),
-        Config.get_network_netstream_servermode());
+        Config.get_network_netstream_register());
 }
 
 void systemBus::setStreamHostWithOptions(const char *hostname, int port,
                                          int mode,
-                                         bool register_enabled,
-                                         bool server_mode)
+                                         bool register_enabled)
 {
     if (_streamDev == nullptr)
     {
@@ -815,7 +813,6 @@ void systemBus::setStreamHostWithOptions(const char *hostname, int port,
         ? sioNetStream::NetStreamMode::UDP
         : sioNetStream::NetStreamMode::TCP;
     _streamDev->netstreamRegisterEnabled = register_enabled;
-    _streamDev->netstreamIsServer = server_mode;
 
     // Restart NetStream mode if needed
     if (_streamDev->netstreamActive)

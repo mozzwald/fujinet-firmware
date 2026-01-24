@@ -273,7 +273,7 @@ public:
 
     void setStreamHost(const char *newhost, int port);             // Set new host/ip & port for NetStream
     void setStreamHostWithOptions(const char *newhost, int port, int mode,
-                                  bool register_enabled, bool server_mode);
+                                  bool register_enabled);
     void setUltraHigh(bool _enable, int _ultraHighBaud = 0);    // enable ultrahigh/set baud rate
     bool getUltraHighEnabled() { return useUltraHigh; }
     int getUltraHighBaudRate() { return _sioBaudUltraHigh; }

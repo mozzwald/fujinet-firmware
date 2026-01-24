@@ -69,32 +69,6 @@ function selectListValue(selectName, currentValue) {
 	}
 }
 
-function setNetstreamServermodeDefault() {
-	const modeSelect = document.getElementById("select_netstream_mode");
-	const servermodeSelect = document.getElementById("select_netstream_servermode");
-	if (modeSelect == null || servermodeSelect == null) return;
-
-	servermodeSelect.value = modeSelect.value === "tcp" ? "0" : "1";
-}
-
-function applyNetstreamServermodeSelection() {
-	const servermodeSelect = document.getElementById("select_netstream_servermode");
-	if (servermodeSelect == null) return;
-	if (typeof current_netstream_servermode === "undefined" || current_netstream_servermode === "") {
-		setNetstreamServermodeDefault();
-		return;
-	}
-	selectListValue("select_netstream_servermode", current_netstream_servermode);
-}
-
-function attachNetstreamModeHandler() {
-	const modeSelect = document.getElementById("select_netstream_mode");
-	if (modeSelect == null) return;
-	modeSelect.addEventListener("change", function() {
-		setNetstreamServermodeDefault();
-	});
-}
-
 function setInputValue(isEnabled, idOn, idOff) {
 	const onElement = document.getElementById(idOn)
 	const offElement = document.getElementById(idOff)
@@ -179,9 +153,7 @@ selectListValue("select_hsioindex", current_hsioindex);
 
 {% if components.net_stream %}
 selectListValue("select_netstream_mode", current_netstream_mode);
-applyNetstreamServermodeSelection();
 setInputValue(current_netstream_register == 1, "netstream-register-yes", "netstream-register-no");
-attachNetstreamModeHandler();
 {% endif %}
 
 {% if components.program_recorder %}

@@ -2098,7 +2098,6 @@ void sioFuji::sio_enable_netstream()
         bool has_flags = false;
         uint8_t flags = 0;
         bool register_enabled = false;
-        bool server_mode = false;
         int stream_mode = 0;
         char host_out[64];
 
@@ -2130,13 +2129,11 @@ void sioFuji::sio_enable_netstream()
         {
             stream_mode = (flags & 0x01) ? 1 : 0;
             register_enabled = (flags & 0x02) != 0;
-            server_mode = (flags & 0x04) != 0;
         }
         else if (!has_prefix)
         {
             stream_mode = 0;
             register_enabled = false;
-            server_mode = false;
         }
 
         size_t copy_len = host_len;
@@ -2149,22 +2146,20 @@ void sioFuji::sio_enable_netstream()
 
         Debug_printf("Fuji cmd ENABLE NETSTREAM: HOST:%s PORT: %d\n", host_out, port);
 #ifdef DEBUG_NETSTREAM
-        Debug_printf("NETSTREAM opts: transport=%s register=%s mode=%s\n",
+        Debug_printf("NETSTREAM opts: transport=%s register=%s\n",
                      (stream_mode == 0) ? "udp" : "tcp",
-                     register_enabled ? "on" : "off",
-                     server_mode ? "sequencer" : "raw");
+                     register_enabled ? "on" : "off");
 #endif
         Config.store_netstream_host(host_out);
         Config.store_netstream_port(port);
         Config.store_netstream_mode(stream_mode);
         Config.store_netstream_register(register_enabled);
-        Config.store_netstream_servermode(server_mode);
         Config.save();
 
         sio_complete();
 
         // Start the NetStream
-        SYSTEM_BUS.setStreamHostWithOptions(host_out, port, stream_mode, register_enabled, server_mode);
+        SYSTEM_BUS.setStreamHostWithOptions(host_out, port, stream_mode, register_enabled);
     }
 }
 

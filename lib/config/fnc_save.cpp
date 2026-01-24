@@ -79,8 +79,6 @@ void fnConfig::save()
     ss << "sntpserver=" << _network.sntpserver << LINETERM;
     ss << "netstream_host=" << _network.netstream_host << LINETERM;
     ss << "netstream_port=" << _network.netstream_port << LINETERM;
-    if (_network.netstream_servermode_set)
-        ss << "netstream_servermode=" << _network.netstream_servermode << LINETERM;
     ss << "netstream_mode=" << _network.netstream_mode << LINETERM;
     ss << "netstream_register=" << _network.netstream_register << LINETERM;
 

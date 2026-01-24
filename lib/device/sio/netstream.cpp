@@ -39,18 +39,7 @@ bool sioNetStream::ensure_netstream_ready()
         const char* str = "REGISTER";
         netStreamTcp.write((const uint8_t *)str, strlen(str));
     }
-    if (netstreamIsServer)
-    {
-        packet_seq = 0;
-        buf_stream_index = 0;
-        packet_seq += 1;
-        *(uint16_t *)buf_stream = packet_seq;
-        buf_stream_index = sizeof(packet_seq);
-    }
-    else
-    {
-        buf_stream_index = 0;
-    }
+    buf_stream_index = 0;
     return true;
 }
 
@@ -129,14 +118,6 @@ void sioNetStream::sio_enable_netstream()
             netStreamUdp.write((const uint8_t *)str, strlen(str));
             netStreamUdp.endPacket();
         }
-        if (netstreamIsServer)
-        {
-            packet_seq = 0;
-            buf_stream_index = 0;
-            packet_seq += 1;
-            *(uint16_t *)buf_stream = packet_seq;
-            buf_stream_index = sizeof(packet_seq);
-        }
     }
     else
     {
@@ -152,11 +133,6 @@ void sioNetStream::sio_enable_netstream()
     rx_count = 0;
     rx_drop_count = 0;
     Debug_println("NETSTREAM mode ENABLED");
-    if (netstreamIsServer)
-    {
-        // Registration handled on TCP connect.
-        Debug_println("NETSTREAM registering with server");
-    }
 }
 
 void sioNetStream::sio_disable_netstream()
@@ -176,27 +152,25 @@ void sioNetStream::sio_disable_netstream()
     fnSystem.digital_write(PIN_CKI, DIGI_HIGH);
 #endif
     netstreamActive = false;
-    netstreamIsServer = false;
     Debug_println("NETSTREAM mode DISABLED");
 }
 
 void sioNetStream::sio_handle_netstream()
 {
     const uint32_t min_gap_us = (netstream_port == MIDI_PORT) ? NETSTREAM_MIN_GAP_US_MIDI : NETSTREAM_MIN_GAP_US_SIO;
-    const size_t base_index = netstreamIsServer ? sizeof(packet_seq) : 0;
     uint64_t batch_start_us = 0;
     bool batch_active = false;
 
     auto flush_udp_out_batch = [&]()
     {
-        if (buf_stream_index <= base_index)
+        if (buf_stream_index == 0)
             return;
 
         if (netstreamMode == NetStreamMode::UDP)
         {
             if (netstream_host_ip == IPADDR_NONE || netstream_port <= 0)
             {
-                buf_stream_index = base_index;
+                buf_stream_index = 0;
                 batch_active = false;
                 batch_start_us = 0;
                 return;
@@ -209,7 +183,7 @@ void sioNetStream::sio_handle_netstream()
         {
             if (!ensure_netstream_ready())
             {
-                buf_stream_index = base_index;
+                buf_stream_index = 0;
                 batch_active = false;
                 batch_start_us = 0;
                 return;
@@ -222,17 +196,7 @@ void sioNetStream::sio_handle_netstream()
         util_dump_bytes(buf_stream, buf_stream_index);
 #endif
 
-        if (netstreamIsServer)
-        {
-            // number the outgoing packet for the server to handle sequencing
-            packet_seq += 1;
-            *(uint16_t *)buf_stream = packet_seq;
-            buf_stream_index = base_index;
-        }
-        else
-        {
-            buf_stream_index = 0;
-        }
+        buf_stream_index = 0;
         batch_active = false;
         batch_start_us = 0;
     };

@@ -49,7 +49,6 @@ private:
     uint32_t rx_drop_count = 0;
     bool cassette_was_active = false;
 
-    uint16_t packet_seq = 0;
     uint64_t last_rx_us = 0;
     uint64_t last_tx_us = 0;
     bool ensure_netstream_ready();
@@ -65,7 +64,6 @@ public:
     };
 
     bool netstreamActive = false; // If we are in netstream mode or not
-    bool netstreamIsServer = false; // If we are connecting to a server
     bool netstreamRegisterEnabled = true; // Send REGISTER on connect
     NetStreamMode netstreamMode = NetStreamMode::TCP;
     in_addr_t netstream_host_ip = IPADDR_NONE;
