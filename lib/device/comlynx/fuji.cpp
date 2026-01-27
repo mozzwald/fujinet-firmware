@@ -1301,7 +1301,7 @@ void lynxFuji::comlynx_hello()
 }
 
 // Set UDP Stream HOST & PORT and start it
-void lynxFuji::comlynx_enable_udpstream(uint16_t s)
+void lynxFuji::comlynx_enable_netstream(uint16_t s)
 {
     char host[128];
 
@@ -1315,7 +1315,7 @@ void lynxFuji::comlynx_enable_udpstream(uint16_t s)
     port |= comlynx_recv() << 8;
     s--;
 
-    Debug_printf("comlynx_enable_udpstream(); p=%u - s=%u",port,s);
+    Debug_printf("comlynx_enable_netstream(); p=%u - s=%u",port,s);
 
     // Receive host
     comlynx_recv_buffer((uint8_t *)host,s);
@@ -1327,12 +1327,12 @@ void lynxFuji::comlynx_enable_udpstream(uint16_t s)
     comlynx_response_ack();
 
     // Save the host and port
-    Config.store_udpstream_host(host);
-    Config.store_udpstream_port(port);
+    Config.store_netstream_host(host);
+    Config.store_netstream_port(port);
     Config.save();
 
     // Start the UDP Stream
-    ComLynx.setUDPHost(host, port);
+    ComLynx.setStreamHost(host, port);
 }
 
 void lynxFuji::comlynx_control_send()
@@ -1445,7 +1445,7 @@ void lynxFuji::comlynx_control_send()
         comlynx_copy_file();
         break;
     case FUJICMD_ENABLE_UDPSTREAM:
-        comlynx_enable_udpstream(s);
+        comlynx_enable_netstream(s);
         break;
     case 0x01:
         comlynx_hello();

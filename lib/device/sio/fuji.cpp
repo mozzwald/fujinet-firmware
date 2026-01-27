@@ -28,6 +28,7 @@
 #include "fsFlash.h"
 #include "fnFsTNFS.h"
 #include "fnWiFi.h"
+#include "netstream.h"
 
 #include "led.h"
 #include "utils.h"
@@ -2130,8 +2131,8 @@ void sioFuji::insert_boot_device(uint8_t d)
     _bootDisk.device_active = false;
 }
 
-// Set UDP Stream HOST & PORT and start it
-void sioFuji::sio_enable_udpstream()
+// Set NetStream HOST & PORT and start it
+void sioFuji::sio_enable_netstream()
 {
     char host[64];
 
@@ -2141,19 +2142,74 @@ void sioFuji::sio_enable_udpstream()
         sio_error();
     else
     {
+        const char *host_start = host;
+        size_t host_len = 0;
+        bool has_prefix = false;
+        bool has_flags = false;
+        uint8_t flags = 0;
+        bool register_enabled = false;
+        int stream_mode = 0;
+        char host_out[64];
+
+        const char *nul = (const char *)memchr(host, '\0', sizeof(host));
+        host_len = nul ? (size_t)(nul - host) : sizeof(host);
+
+        if (host_len >= 4 && memcmp(host, "tcp:", 4) == 0)
+        {
+            has_prefix = true;
+            stream_mode = 1;
+            host_start = host + 4;
+            host_len = (host_len >= 4) ? (host_len - 4) : 0;
+        }
+        else if (host_len >= 4 && memcmp(host, "udp:", 4) == 0)
+        {
+            has_prefix = true;
+            stream_mode = 0;
+            host_start = host + 4;
+            host_len = (host_len >= 4) ? (host_len - 4) : 0;
+        }
+
+        if (has_prefix && nul != nullptr && (size_t)(nul - host + 1) < sizeof(host))
+        {
+            flags = (uint8_t)host[(nul - host) + 1];
+            has_flags = true;
+        }
+
+        if (has_flags)
+        {
+            stream_mode = (flags & 0x01) ? 1 : 0;
+            register_enabled = (flags & 0x02) != 0;
+        }
+        else if (!has_prefix)
+        {
+            stream_mode = 0;
+            register_enabled = false;
+        }
+
+        size_t copy_len = host_len;
+        if (copy_len > sizeof(host_out) - 1)
+            copy_len = sizeof(host_out) - 1;
+        memcpy(host_out, host_start, copy_len);
+        host_out[copy_len] = '\0';
+
         int port = (cmdFrame.aux1 << 8) | cmdFrame.aux2;
 
-        Debug_printf("Fuji cmd ENABLE UDPSTREAM: HOST:%s PORT: %d\n", host, port);
-
-        // Save the host and port
-        Config.store_udpstream_host(host);
-        Config.store_udpstream_port(port);
+        Debug_printf("Fuji cmd ENABLE NETSTREAM: HOST:%s PORT: %d\n", host_out, port);
+#ifdef DEBUG_NETSTREAM
+        Debug_printf("NETSTREAM opts: transport=%s register=%s\n",
+                     (stream_mode == 0) ? "udp" : "tcp",
+                     register_enabled ? "on" : "off");
+#endif
+        Config.store_netstream_host(host_out);
+        Config.store_netstream_port(port);
+        Config.store_netstream_mode(stream_mode);
+        Config.store_netstream_register(register_enabled);
         Config.save();
 
         sio_complete();
 
-        // Start the UDP Stream
-        SIO.setUDPHost(host, port);
+        // Start the NetStream
+        SIO.setStreamHostWithOptions(host_out, port, stream_mode, register_enabled);
     }
 }
 
@@ -2740,7 +2796,7 @@ void sioFuji::sio_process(uint32_t commanddata, uint8_t checksum)
         break;
     case FUJICMD_ENABLE_UDPSTREAM:
         sio_late_ack();
-        sio_enable_udpstream();
+        sio_enable_netstream();
         break;
     case FUJICMD_QRCODE_INPUT:
         sio_ack();

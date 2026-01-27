@@ -5,7 +5,6 @@
 #include "../../include/debug.h"
 
 #include "fuji.h"
-#include "udpstream.h"
 #include "modem.h"
 #include "siocpm.h"
 
@@ -348,7 +347,7 @@ void systemBus::addDevice(virtualDevice *pDevice, int device_id)
     }
     else if (device_id == RS232_DEVICEID_MIDI)
     {
-        _udpDev = (rs232UDPStream *)pDevice;
+        _streamDev = (rs232NetStream *)pDevice;
     }
     else if (device_id == RS232_DEVICEID_CPM)
     {
@@ -460,7 +459,7 @@ int systemBus::getHighSpeedBaud()
     return _rs232BaudHigh;
 }
 
-void systemBus::setUDPHost(const char *hostname, int port)
+void systemBus::setStreamHost(const char *hostname, int port)
 {
 }
 

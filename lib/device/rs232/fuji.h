@@ -90,7 +90,7 @@ protected:
     void rs232_write_host_slots();       // 0xF3
     void rs232_read_device_slots();      // 0xF2
     void rs232_write_device_slots();     // 0xF1
-    void rs232_enable_udpstream();       // 0xF0
+    void rs232_enable_netstream();       // 0xF0
     void rs232_net_get_wifi_enabled();   // 0xEA
     void rs232_disk_image_umount();      // 0xE9
     void rs232_get_adapter_config();     // 0xE8

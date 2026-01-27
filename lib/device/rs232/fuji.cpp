@@ -1432,7 +1432,7 @@ void rs232Fuji::insert_boot_device(uint8_t d)
 }
 
 // Set UDP Stream HOST & PORT and start it
-void rs232Fuji::rs232_enable_udpstream()
+void rs232Fuji::rs232_enable_netstream()
 {
     char host[64];
 
@@ -1444,17 +1444,17 @@ void rs232Fuji::rs232_enable_udpstream()
     {
         int port = (cmdFrame.aux1 << 8) | cmdFrame.aux2;
 
-        Debug_printf("Fuji cmd ENABLE UDPSTREAM: HOST:%s PORT: %d\n", host, port);
+        Debug_printf("Fuji cmd ENABLE NETSTREAM: HOST:%s PORT: %d\n", host, port);
 
         // Save the host and port
-        Config.store_udpstream_host(host);
-        Config.store_udpstream_port(port);
+        Config.store_netstream_host(host);
+        Config.store_netstream_port(port);
         Config.save();
 
         rs232_complete();
 
         // Start the UDP Stream
-        RS232.setUDPHost(host, port);
+        RS232.setStreamHost(host, port);
     }
 }
 
@@ -1642,7 +1642,7 @@ void rs232Fuji::rs232_process(cmdFrame_t *cmd_ptr)
         break;
     case FUJICMD_ENABLE_UDPSTREAM:
         rs232_ack();
-        rs232_enable_udpstream();
+        rs232_enable_netstream();
         break;
     case FUJICMD_DEVICE_READY:
         Debug_printf("FUJICMD DEVICE TEST\n");

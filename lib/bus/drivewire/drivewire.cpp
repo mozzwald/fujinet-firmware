@@ -7,7 +7,6 @@
 #include "../../include/debug.h"
 
 #include "fuji.h"
-#include "udpstream.h"
 #include "modem.h"
 #include "cassette.h"
 #include "printer.h"
