@@ -242,9 +242,7 @@ void main_setup(int argc, char *argv[])
     if (Config.get_apetime_enabled() == true)
         SIO.addDevice(&clockDevice, SIO_DEVICEID_APETIME); // Clock for Atari, APETime compatible, but extended for additional return types
 
-#ifdef ESP_PLATFORM
     SIO.addDevice(&streamDev, SIO_DEVICEID_MIDI); // NetStream/MIDI device
-#endif
 
     // add PCLink device only if we have SD card
     if (fnSDFAT.running())
