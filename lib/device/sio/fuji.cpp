@@ -2142,63 +2142,50 @@ void sioFuji::sio_enable_netstream()
         sio_error();
     else
     {
-        const char *host_start = host;
         size_t host_len = 0;
-        bool has_prefix = false;
-        bool has_flags = false;
         uint8_t flags = 0;
-        bool register_enabled = false;
-        int stream_mode = 0;
+        uint8_t audf3 = 0;
+        bool has_audf3 = false;
         char host_out[64];
 
         const char *nul = (const char *)memchr(host, '\0', sizeof(host));
         host_len = nul ? (size_t)(nul - host) : sizeof(host);
 
-        if (host_len >= 4 && memcmp(host, "tcp:", 4) == 0)
+        if (nul != nullptr)
         {
-            has_prefix = true;
-            stream_mode = 1;
-            host_start = host + 4;
-            host_len = (host_len >= 4) ? (host_len - 4) : 0;
-        }
-        else if (host_len >= 4 && memcmp(host, "udp:", 4) == 0)
-        {
-            has_prefix = true;
-            stream_mode = 0;
-            host_start = host + 4;
-            host_len = (host_len >= 4) ? (host_len - 4) : 0;
-        }
-
-        if (has_prefix && nul != nullptr && (size_t)(nul - host + 1) < sizeof(host))
-        {
-            flags = (uint8_t)host[(nul - host) + 1];
-            has_flags = true;
+            size_t nul_index = (size_t)(nul - host);
+            if (nul_index + 1 < sizeof(host))
+            {
+                flags = (uint8_t)host[nul_index + 1];
+            }
+            if (nul_index + 2 < sizeof(host))
+            {
+                audf3 = (uint8_t)host[nul_index + 2];
+                has_audf3 = true;
+            }
         }
 
-        if (has_flags)
-        {
-            stream_mode = (flags & 0x01) ? 1 : 0;
-            register_enabled = (flags & 0x02) != 0;
-        }
-        else if (!has_prefix)
-        {
-            stream_mode = 0;
-            register_enabled = false;
-        }
+        int stream_mode = (flags & 0x01) ? 1 : 0;
+        bool register_enabled = (flags & 0x02) != 0;
+        bool tx_clock_external = (flags & 0x04) != 0;
+        bool rx_clock_external = (flags & 0x08) != 0;
+        bool video_pal = (flags & 0x10) != 0;
 
         size_t copy_len = host_len;
         if (copy_len > sizeof(host_out) - 1)
             copy_len = sizeof(host_out) - 1;
-        memcpy(host_out, host_start, copy_len);
+        memcpy(host_out, host, copy_len);
         host_out[copy_len] = '\0';
 
         int port = (cmdFrame.aux1 << 8) | cmdFrame.aux2;
 
         Debug_printf("Fuji cmd ENABLE NETSTREAM: HOST:%s PORT: %d\n", host_out, port);
 #ifdef DEBUG_NETSTREAM
-        Debug_printf("NETSTREAM opts: transport=%s register=%s\n",
+        Debug_printf("NETSTREAM opts: transport=%s register=%s flags=0x%02X audf3=%u\n",
                      (stream_mode == 0) ? "udp" : "tcp",
-                     register_enabled ? "on" : "off");
+                     register_enabled ? "on" : "off",
+                     flags,
+                     audf3);
 #endif
         Config.store_netstream_host(host_out);
         Config.store_netstream_port(port);
@@ -2209,7 +2196,15 @@ void sioFuji::sio_enable_netstream()
         sio_complete();
 
         // Start the NetStream
-        SIO.setStreamHostWithOptions(host_out, port, stream_mode, register_enabled);
+        SIO.setStreamHostWithOptions(host_out,
+                                     port,
+                                     stream_mode,
+                                     register_enabled,
+                                     has_audf3 ? audf3 : 0,
+                                     video_pal,
+                                     tx_clock_external,
+                                     rx_clock_external,
+                                     has_audf3);
     }
 }
 
