@@ -24,6 +24,8 @@
 #define NETSTREAM_BUFFER_SIZE 2048
 #define NETSTREAM_RX_RING_SIZE 2048
 #define NETSTREAM_PACKET_TIMEOUT 5000
+#define NETSTREAM_SEQ_TIMEOUT_US 20000
+#define NETSTREAM_SEQ_CACHE_SLOTS 8
 #define NETSTREAM_MIN_GAP_US_MIDI 320                           // ~1 byte at 31.25kbps
 #define NETSTREAM_MIN_GAP_US_SIO 520                            // ~1 byte at 19.2kbps
 #define NETSTREAM_MAX_BATCH_AGE_US 3000                         // Max SIO->NET batch age before forced flush.
@@ -34,15 +36,23 @@
 class sioNetStream : public virtualDevice
 {
 private:
+    struct NetstreamSeqSlot
+    {
+        bool valid = false;
+        uint16_t seq = 0;
+        uint16_t len = 0;
+        uint8_t *data = nullptr;
+    };
+
     fnTcpClient netStreamTcp;
     fnUDP netStreamUdp;
 
-    uint8_t buf_net[NETSTREAM_BUFFER_SIZE];
-    uint8_t buf_stream[NETSTREAM_BUFFER_SIZE];
+    uint8_t *buf_net = nullptr;
+    uint8_t *buf_stream = nullptr;
 
     unsigned int buf_stream_index=0;
 
-    uint8_t rx_ring[NETSTREAM_RX_RING_SIZE];
+    uint8_t *rx_ring = nullptr;
     uint16_t rx_head = 0;
     uint16_t rx_tail = 0;
     uint16_t rx_count = 0;
@@ -51,6 +61,12 @@ private:
 
     uint64_t last_rx_us = 0;
     uint64_t last_tx_us = 0;
+    uint64_t netstream_seq_gap_start_us = 0;
+    uint16_t netstream_seq_expected = 0;
+    uint16_t netstream_seq_tx = 0;
+    NetstreamSeqSlot netstream_seq_cache[NETSTREAM_SEQ_CACHE_SLOTS];
+    bool netstream_alloc_buffers();
+    void netstream_free_buffers();
     bool ensure_netstream_ready();
     void pace_to_atari(uint32_t min_gap_us);
     void sio_status() override;
@@ -72,6 +88,7 @@ public:
     bool netstream_tx_clock_external = false;
     bool netstream_rx_clock_external = false;
     bool netstream_has_audf3 = false;
+    bool netstream_seq_enabled = false;
     uint8_t netstream_audf3 = 0;
     int netstream_baud = SIO_STANDARD_BAUDRATE;
 

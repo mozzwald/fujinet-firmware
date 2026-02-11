@@ -2170,6 +2170,7 @@ void sioFuji::sio_enable_netstream()
         bool tx_clock_external = (flags & 0x04) != 0;
         bool rx_clock_external = (flags & 0x08) != 0;
         bool video_pal = (flags & 0x10) != 0;
+        bool seq_enabled = (flags & 0x20) != 0;
 
         size_t copy_len = host_len;
         if (copy_len > sizeof(host_out) - 1)
@@ -2204,7 +2205,8 @@ void sioFuji::sio_enable_netstream()
                                      video_pal,
                                      tx_clock_external,
                                      rx_clock_external,
-                                     has_audf3);
+                                     has_audf3,
+                                     seq_enabled);
     }
 }
 

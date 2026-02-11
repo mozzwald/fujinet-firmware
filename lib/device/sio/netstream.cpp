@@ -12,6 +12,7 @@
 // TODO: merge/fix this at global level
 #ifdef ESP_PLATFORM
 #include "fnUART.h"
+#include "esp_heap_caps.h"
 #define FN_BUS_LINK fnUartBUS
 #else
 #define FN_BUS_LINK fnSioCom
@@ -24,6 +25,108 @@ static uint64_t netstream_time_us()
 #else
     return (uint64_t)fnSystem.millis() * 1000ULL;
 #endif
+}
+
+static inline int16_t netstream_seq_diff(uint16_t seq, uint16_t expected)
+{
+    return (int16_t)(seq - expected);
+}
+
+bool sioNetStream::netstream_alloc_buffers()
+{
+#ifdef ESP_PLATFORM
+#if CONFIG_SPIRAM
+    auto alloc = [](size_t n) -> void *
+    {
+        return heap_caps_malloc(n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    };
+#else
+    auto alloc = [](size_t n) -> void *
+    {
+        return heap_caps_malloc(n, MALLOC_CAP_DEFAULT);
+    };
+#endif
+    auto free_buf = [](void *p)
+    {
+        if (p != nullptr)
+            heap_caps_free(p);
+    };
+#else
+    auto alloc = [](size_t n) -> void *
+    {
+        return malloc(n);
+    };
+    auto free_buf = [](void *p)
+    {
+        if (p != nullptr)
+            free(p);
+    };
+#endif
+
+    buf_net = (uint8_t *)alloc(NETSTREAM_BUFFER_SIZE);
+    buf_stream = (uint8_t *)alloc(NETSTREAM_BUFFER_SIZE);
+    rx_ring = (uint8_t *)alloc(NETSTREAM_RX_RING_SIZE);
+    if (buf_net == nullptr || buf_stream == nullptr || rx_ring == nullptr)
+    {
+        free_buf(buf_net);
+        free_buf(buf_stream);
+        free_buf(rx_ring);
+        buf_net = nullptr;
+        buf_stream = nullptr;
+        rx_ring = nullptr;
+        return false;
+    }
+
+    for (int i = 0; i < NETSTREAM_SEQ_CACHE_SLOTS; i++)
+    {
+        netstream_seq_cache[i].data = (uint8_t *)alloc(NETSTREAM_BUFFER_SIZE);
+        if (netstream_seq_cache[i].data == nullptr)
+        {
+            for (int j = 0; j <= i; j++)
+            {
+                free_buf(netstream_seq_cache[j].data);
+                netstream_seq_cache[j].data = nullptr;
+            }
+            free_buf(buf_net);
+            free_buf(buf_stream);
+            free_buf(rx_ring);
+            buf_net = nullptr;
+            buf_stream = nullptr;
+            rx_ring = nullptr;
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void sioNetStream::netstream_free_buffers()
+{
+#ifdef ESP_PLATFORM
+    auto free_buf = [](void *p)
+    {
+        if (p != nullptr)
+            heap_caps_free(p);
+    };
+#else
+    auto free_buf = [](void *p)
+    {
+        if (p != nullptr)
+            free(p);
+    };
+#endif
+
+    for (int i = 0; i < NETSTREAM_SEQ_CACHE_SLOTS; i++)
+    {
+        free_buf(netstream_seq_cache[i].data);
+        netstream_seq_cache[i].data = nullptr;
+    }
+    free_buf(buf_net);
+    free_buf(buf_stream);
+    free_buf(rx_ring);
+    buf_net = nullptr;
+    buf_stream = nullptr;
+    rx_ring = nullptr;
 }
 
 struct NetstreamAudf3Baud
@@ -169,6 +272,17 @@ void sioNetStream::sio_enable_netstream()
                  netstream_video_pal ? "PAL" : "NTSC");
 #endif
 
+    if (!netstream_alloc_buffers())
+    {
+#ifdef DEBUG_NETSTREAM
+        Debug_println("NETSTREAM: PSRAM buffer allocation failed");
+#endif
+        if (cassette_was_active && SIO.getCassette() != nullptr && SIO.getCassette()->is_mounted())
+            SIO.getCassette()->sio_enable_cassette();
+        cassette_was_active = false;
+        return;
+    }
+
 #ifdef ESP_PLATFORM
     if (netstream_tx_clock_external || netstream_rx_clock_external)
         netstream_enable_clock_pwm(netstream_baud);
@@ -199,6 +313,11 @@ void sioNetStream::sio_enable_netstream()
     rx_tail = 0;
     rx_count = 0;
     rx_drop_count = 0;
+    netstream_seq_gap_start_us = 0;
+    netstream_seq_expected = 0;
+    netstream_seq_tx = 0;
+    for (int i = 0; i < NETSTREAM_SEQ_CACHE_SLOTS; i++)
+        netstream_seq_cache[i].valid = false;
     Debug_println("NETSTREAM mode ENABLED");
 }
 
@@ -219,14 +338,159 @@ void sioNetStream::sio_disable_netstream()
     fnSystem.digital_write(PIN_CKI, DIGI_HIGH);
 #endif
     netstreamActive = false;
+    netstream_free_buffers();
     Debug_println("NETSTREAM mode DISABLED");
 }
 
 void sioNetStream::sio_handle_netstream()
 {
+    if (buf_net == nullptr || buf_stream == nullptr || rx_ring == nullptr)
+        return;
     const uint32_t min_gap_us = (netstream_port == MIDI_PORT) ? NETSTREAM_MIN_GAP_US_MIDI : NETSTREAM_MIN_GAP_US_SIO;
     uint64_t batch_start_us = 0;
     bool batch_active = false;
+
+    auto push_bytes = [&](const uint8_t *data, int len)
+    {
+        for (int i = 0; i < len; i++)
+        {
+            if (rx_count < NETSTREAM_RX_RING_SIZE)
+            {
+                rx_ring[rx_head] = data[i];
+                rx_head = (rx_head + 1) % NETSTREAM_RX_RING_SIZE;
+                rx_count++;
+            }
+            else
+            {
+                // Drop oldest byte to keep the most recent stream data.
+                rx_tail = (rx_tail + 1) % NETSTREAM_RX_RING_SIZE;
+                rx_ring[rx_head] = data[i];
+                rx_head = (rx_head + 1) % NETSTREAM_RX_RING_SIZE;
+                rx_drop_count++;
+            }
+        }
+    };
+
+    auto has_seq_cache = [&]() -> bool
+    {
+        for (int i = 0; i < NETSTREAM_SEQ_CACHE_SLOTS; i++)
+        {
+            if (netstream_seq_cache[i].valid)
+                return true;
+        }
+        return false;
+    };
+
+    auto flush_cached_in_order = [&]()
+    {
+        bool progressed = true;
+        while (progressed)
+        {
+            progressed = false;
+            for (int i = 0; i < NETSTREAM_SEQ_CACHE_SLOTS; i++)
+            {
+                if (!netstream_seq_cache[i].valid)
+                    continue;
+                if (netstream_seq_diff(netstream_seq_cache[i].seq, netstream_seq_expected) == 0)
+                {
+                    push_bytes(netstream_seq_cache[i].data, netstream_seq_cache[i].len);
+                    netstream_seq_cache[i].valid = false;
+                    netstream_seq_expected++;
+                    progressed = true;
+                    break;
+                }
+            }
+        }
+    };
+
+    auto cache_seq_packet = [&](uint16_t seq, const uint8_t *data, uint16_t len, uint64_t now_us)
+    {
+        for (int i = 0; i < NETSTREAM_SEQ_CACHE_SLOTS; i++)
+        {
+            if (netstream_seq_cache[i].valid && netstream_seq_cache[i].seq == seq)
+            {
+#ifdef DEBUG_NETSTREAM
+                Debug_printf("NETSTREAM dup seq %u cached, drop\n", seq);
+#endif
+                return;
+            }
+        }
+
+        int free_idx = -1;
+        int far_idx = -1;
+        int16_t far_diff = 0;
+        for (int i = 0; i < NETSTREAM_SEQ_CACHE_SLOTS; i++)
+        {
+            if (!netstream_seq_cache[i].valid)
+            {
+                if (free_idx < 0)
+                    free_idx = i;
+                continue;
+            }
+            int16_t diff = netstream_seq_diff(netstream_seq_cache[i].seq, netstream_seq_expected);
+            if (diff > 0 && (far_idx < 0 || diff > far_diff))
+            {
+                far_idx = i;
+                far_diff = diff;
+            }
+        }
+
+        int16_t new_diff = netstream_seq_diff(seq, netstream_seq_expected);
+        int target = free_idx;
+        if (target < 0)
+        {
+            if (far_idx >= 0 && new_diff < far_diff)
+                target = far_idx;
+            else
+            {
+#ifdef DEBUG_NETSTREAM
+                Debug_printf("NETSTREAM seq %u too far ahead, drop\n", seq);
+#endif
+                return;
+            }
+        }
+
+        netstream_seq_cache[target].valid = true;
+        netstream_seq_cache[target].seq = seq;
+        netstream_seq_cache[target].len = len;
+        memcpy(netstream_seq_cache[target].data, data, len);
+        if (netstream_seq_gap_start_us == 0)
+            netstream_seq_gap_start_us = now_us;
+    };
+
+    auto maybe_timeout_advance = [&](uint64_t now_us)
+    {
+        if (netstream_seq_gap_start_us == 0)
+            return;
+        if ((now_us - netstream_seq_gap_start_us) < NETSTREAM_SEQ_TIMEOUT_US)
+            return;
+
+        int best_idx = -1;
+        int16_t best_diff = 0;
+        for (int i = 0; i < NETSTREAM_SEQ_CACHE_SLOTS; i++)
+        {
+            if (!netstream_seq_cache[i].valid)
+                continue;
+            int16_t diff = netstream_seq_diff(netstream_seq_cache[i].seq, netstream_seq_expected);
+            if (diff > 0 && (best_idx < 0 || diff < best_diff))
+            {
+                best_idx = i;
+                best_diff = diff;
+            }
+        }
+
+        if (best_idx >= 0)
+        {
+            uint16_t seq = netstream_seq_cache[best_idx].seq;
+            uint16_t len = netstream_seq_cache[best_idx].len;
+            push_bytes(netstream_seq_cache[best_idx].data, len);
+            netstream_seq_cache[best_idx].valid = false;
+            netstream_seq_expected = (uint16_t)(seq + 1);
+            flush_cached_in_order();
+        }
+
+        netstream_seq_gap_start_us = has_seq_cache() ? now_us : 0;
+    };
 
     auto flush_udp_out_batch = [&]()
     {
@@ -243,7 +507,19 @@ void sioNetStream::sio_handle_netstream()
                 return;
             }
             netStreamUdp.beginPacket(netstream_host_ip, netstream_port); // remote IP and port
-            netStreamUdp.write(buf_stream, buf_stream_index);
+            if (netstream_seq_enabled)
+            {
+                uint8_t hdr[2];
+                hdr[0] = (uint8_t)((netstream_seq_tx >> 8) & 0xFF);
+                hdr[1] = (uint8_t)(netstream_seq_tx & 0xFF);
+                netStreamUdp.write(hdr, sizeof(hdr));
+                netStreamUdp.write(buf_stream, buf_stream_index);
+                netstream_seq_tx++;
+            }
+            else
+            {
+                netStreamUdp.write(buf_stream, buf_stream_index);
+            }
             netStreamUdp.endPacket();
         }
         else
@@ -260,6 +536,8 @@ void sioNetStream::sio_handle_netstream()
 
 #ifdef DEBUG_NETSTREAM
         Debug_printf("STREAM-OUT [%llu ms]: ", (unsigned long long)(netstream_time_us() / 1000ULL));
+        if (netstream_seq_enabled && netstreamMode == NetStreamMode::UDP)
+            Debug_printf("SEQ=%u ", netstream_seq_tx);
         util_dump_bytes(buf_stream, buf_stream_index);
 #endif
 
@@ -276,30 +554,59 @@ void sioNetStream::sio_handle_netstream()
         {
             netStreamUdp.read(buf_net, NETSTREAM_BUFFER_SIZE);
 
-            // Buffer incoming UDP bytes for paced UART output.
-            for (int i = 0; i < packetSize; i++)
+            if (netstream_seq_enabled)
             {
-                if (rx_count < NETSTREAM_RX_RING_SIZE)
+                if (packetSize >= 2)
                 {
-                    rx_ring[rx_head] = buf_net[i];
-                    rx_head = (rx_head + 1) % NETSTREAM_RX_RING_SIZE;
-                    rx_count++;
+                    uint16_t seq = ((uint16_t)buf_net[0] << 8) | (uint16_t)buf_net[1];
+                    const uint8_t *payload = buf_net + 2;
+                    uint16_t payload_len = (uint16_t)(packetSize - 2);
+                    int16_t diff = netstream_seq_diff(seq, netstream_seq_expected);
+                    uint64_t now_us = netstream_time_us();
+
+                    if (diff == 0)
+                    {
+                        push_bytes(payload, payload_len);
+                        netstream_seq_expected++;
+                        flush_cached_in_order();
+                        netstream_seq_gap_start_us = has_seq_cache() ? now_us : 0;
+                    }
+                    else if (diff > 0)
+                    {
+                        cache_seq_packet(seq, payload, payload_len, now_us);
+                    }
+                    else
+                    {
+                        // Duplicate or late packet, drop.
+#ifdef DEBUG_NETSTREAM
+                        Debug_printf("NETSTREAM dup/late seq %u (expected %u), drop\n",
+                                     seq,
+                                     netstream_seq_expected);
+#endif
+                    }
+                    maybe_timeout_advance(now_us);
                 }
-                else
-                {
-                    // Drop oldest byte to keep the most recent stream data.
-                    rx_tail = (rx_tail + 1) % NETSTREAM_RX_RING_SIZE;
-                    rx_ring[rx_head] = buf_net[i];
-                    rx_head = (rx_head + 1) % NETSTREAM_RX_RING_SIZE;
-                    rx_drop_count++;
-                }
+            }
+            else
+            {
+                // Buffer incoming UDP bytes for paced UART output.
+                push_bytes(buf_net, packetSize);
             }
             last_rx_us = netstream_time_us();
 #ifdef DEBUG_NETSTREAM
             Debug_printf("STREAM-IN [%llu ms]: ", (unsigned long long)(netstream_time_us() / 1000ULL));
-            util_dump_bytes(buf_net, packetSize);
+            if (netstream_seq_enabled && packetSize >= 2)
+            {
+                uint16_t dbg_seq = ((uint16_t)buf_net[0] << 8) | (uint16_t)buf_net[1];
+                Debug_printf("SEQ=%u ", dbg_seq);
+                util_dump_bytes(buf_net + 2, packetSize - 2);
+            }
+            else
+                util_dump_bytes(buf_net, packetSize);
 #endif
         }
+        if (netstream_seq_enabled && netstream_seq_gap_start_us != 0)
+            maybe_timeout_advance(netstream_time_us());
     }
     else if (ensure_netstream_ready())
     {
@@ -313,23 +620,7 @@ void sioNetStream::sio_handle_netstream()
                 break;
 
             // Buffer incoming TCP bytes for paced UART output.
-            for (int i = 0; i < packetSize; i++)
-            {
-                if (rx_count < NETSTREAM_RX_RING_SIZE)
-                {
-                    rx_ring[rx_head] = buf_net[i];
-                    rx_head = (rx_head + 1) % NETSTREAM_RX_RING_SIZE;
-                    rx_count++;
-                }
-                else
-                {
-                    // Drop oldest byte to keep the most recent stream data.
-                    rx_tail = (rx_tail + 1) % NETSTREAM_RX_RING_SIZE;
-                    rx_ring[rx_head] = buf_net[i];
-                    rx_head = (rx_head + 1) % NETSTREAM_RX_RING_SIZE;
-                    rx_drop_count++;
-                }
-            }
+            push_bytes(buf_net, packetSize);
             last_rx_us = netstream_time_us();
 #ifdef DEBUG_NETSTREAM
             Debug_printf("STREAM-IN [%llu ms]: ", (unsigned long long)(netstream_time_us() / 1000ULL));
