@@ -322,7 +322,8 @@ public:
                                   bool video_pal = false,
                                   bool tx_clock_external = false,
                                   bool rx_clock_external = false,
-                                  bool has_audf3 = false);
+                                  bool has_audf3 = false,
+                                  bool seq_enabled = false);
     void setUltraHigh(bool _enable, int _ultraHighBaud = 0);    // enable ultrahigh/set baud rate
     bool getUltraHighEnabled() { return useUltraHigh; }
     int getUltraHighBaudRate() { return _sioBaudUltraHigh; }

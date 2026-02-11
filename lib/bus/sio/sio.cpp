@@ -830,7 +830,8 @@ void systemBus::setStreamHostWithOptions(const char *hostname,
                                          bool video_pal,
                                          bool tx_clock_external,
                                          bool rx_clock_external,
-                                         bool has_audf3)
+                                         bool has_audf3,
+                                         bool seq_enabled)
 {
     if (_streamDev == nullptr)
     {
@@ -882,6 +883,7 @@ void systemBus::setStreamHostWithOptions(const char *hostname,
     _streamDev->netstream_rx_clock_external = rx_clock_external;
     _streamDev->netstream_audf3 = audf3;
     _streamDev->netstream_has_audf3 = has_audf3;
+    _streamDev->netstream_seq_enabled = seq_enabled;
 
     // Restart NetStream mode if needed
     if (_streamDev->netstreamActive)
