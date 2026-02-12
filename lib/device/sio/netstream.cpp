@@ -316,6 +316,9 @@ void sioNetStream::sio_enable_netstream()
     netstream_seq_gap_start_us = 0;
     netstream_seq_expected = 0;
     netstream_seq_tx = 0;
+    netstream_uart_rx_total = 0;
+    netstream_udp_tx_attempts = 0;
+    netstream_udp_tx_fails = 0;
     for (int i = 0; i < NETSTREAM_SEQ_CACHE_SLOTS; i++)
         netstream_seq_cache[i].valid = false;
     Debug_println("NETSTREAM mode ENABLED");
@@ -349,6 +352,7 @@ void sioNetStream::sio_handle_netstream()
     const uint32_t min_gap_us = (netstream_port == MIDI_PORT) ? NETSTREAM_MIN_GAP_US_MIDI : NETSTREAM_MIN_GAP_US_SIO;
     uint64_t batch_start_us = 0;
     bool batch_active = false;
+    uint32_t batch_uart_rx = 0;
 
     auto push_bytes = [&](const uint8_t *data, int len)
     {
@@ -504,9 +508,10 @@ void sioNetStream::sio_handle_netstream()
                 buf_stream_index = 0;
                 batch_active = false;
                 batch_start_us = 0;
+                batch_uart_rx = 0;
                 return;
             }
-            netStreamUdp.beginPacket(netstream_host_ip, netstream_port); // remote IP and port
+            int begin_rc = netStreamUdp.beginPacket(netstream_host_ip, netstream_port); // remote IP and port
             if (netstream_seq_enabled)
             {
                 uint8_t hdr[2];
@@ -514,13 +519,31 @@ void sioNetStream::sio_handle_netstream()
                 hdr[1] = (uint8_t)(netstream_seq_tx & 0xFF);
                 netStreamUdp.write(hdr, sizeof(hdr));
                 netStreamUdp.write(buf_stream, buf_stream_index);
-                netstream_seq_tx++;
             }
             else
             {
                 netStreamUdp.write(buf_stream, buf_stream_index);
             }
-            netStreamUdp.endPacket();
+            int end_rc = -1;
+            if (begin_rc)
+                end_rc = netStreamUdp.endPacket();
+            netstream_udp_tx_attempts++;
+            if (!begin_rc || end_rc <= 0)
+            {
+                netstream_udp_tx_fails++;
+#ifdef DEBUG_NETSTREAM
+                Debug_printf("NETSTREAM UDP TX failed (begin=%d end=%d) attempts=%lu fails=%lu\n",
+                             begin_rc,
+                             end_rc,
+                             (unsigned long)netstream_udp_tx_attempts,
+                             (unsigned long)netstream_udp_tx_fails);
+#endif
+                fnSystem.delay_microseconds(1000);
+            }
+            else if (netstream_seq_enabled)
+            {
+                netstream_seq_tx++;
+            }
         }
         else
         {
@@ -538,12 +561,19 @@ void sioNetStream::sio_handle_netstream()
         Debug_printf("STREAM-OUT [%llu ms]: ", (unsigned long long)(netstream_time_us() / 1000ULL));
         if (netstream_seq_enabled && netstreamMode == NetStreamMode::UDP)
             Debug_printf("SEQ=%u ", netstream_seq_tx);
+        Debug_printf("LEN=%u ", (unsigned)buf_stream_index);
         util_dump_bytes(buf_stream, buf_stream_index);
 #endif
 
         buf_stream_index = 0;
         batch_active = false;
         batch_start_us = 0;
+#ifdef DEBUG_NETSTREAM
+        Debug_printf("NETSTREAM UART-IN total=%lu batch=%lu\n",
+                     (unsigned long)netstream_uart_rx_total,
+                     (unsigned long)batch_uart_rx);
+#endif
+        batch_uart_rx = 0;
     };
 
     if (netstreamMode == NetStreamMode::UDP)
@@ -656,10 +686,13 @@ void sioNetStream::sio_handle_netstream()
                 {
                     batch_start_us = netstream_time_us();
                     batch_active = true;
+                    batch_uart_rx = 0;
                 }
                 buf_stream[buf_stream_index] = (unsigned char)in_byte;
                 if (buf_stream_index < NETSTREAM_BUFFER_SIZE - 1)
                     buf_stream_index++;
+                netstream_uart_rx_total++;
+                batch_uart_rx++;
                 if (buf_stream_index >= NETSTREAM_FLUSH_THRESHOLD)
                 {
                     // Flush when nearly full to avoid overwrite/drops.

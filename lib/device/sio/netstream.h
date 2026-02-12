@@ -24,7 +24,7 @@
 #define NETSTREAM_BUFFER_SIZE 2048
 #define NETSTREAM_RX_RING_SIZE 2048
 #define NETSTREAM_PACKET_TIMEOUT 5000
-#define NETSTREAM_SEQ_TIMEOUT_US 20000
+#define NETSTREAM_SEQ_TIMEOUT_US 100000
 #define NETSTREAM_SEQ_CACHE_SLOTS 8
 #define NETSTREAM_MIN_GAP_US_MIDI 320                           // ~1 byte at 31.25kbps
 #define NETSTREAM_MIN_GAP_US_SIO 520                            // ~1 byte at 19.2kbps
@@ -64,6 +64,9 @@ private:
     uint64_t netstream_seq_gap_start_us = 0;
     uint16_t netstream_seq_expected = 0;
     uint16_t netstream_seq_tx = 0;
+    uint32_t netstream_uart_rx_total = 0;
+    uint32_t netstream_udp_tx_attempts = 0;
+    uint32_t netstream_udp_tx_fails = 0;
     NetstreamSeqSlot netstream_seq_cache[NETSTREAM_SEQ_CACHE_SLOTS];
     bool netstream_alloc_buffers();
     void netstream_free_buffers();
