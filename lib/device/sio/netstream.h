@@ -24,8 +24,8 @@
 #define NETSTREAM_BUFFER_SIZE 2048
 #define NETSTREAM_RX_RING_SIZE 2048
 #define NETSTREAM_PACKET_TIMEOUT 5000
-#define NETSTREAM_SEQ_TIMEOUT_US 100000
-#define NETSTREAM_SEQ_CACHE_SLOTS 8
+#define NETSTREAM_SEQ_TIMEOUT_US 150000
+#define NETSTREAM_SEQ_CACHE_SLOTS 16
 #define NETSTREAM_MIN_GAP_US_MIDI 320                           // ~1 byte at 31.25kbps
 #define NETSTREAM_MIN_GAP_US_SIO 520                            // ~1 byte at 19.2kbps
 #define NETSTREAM_MAX_BATCH_AGE_US 3000                         // Max SIO->NET batch age before forced flush.
