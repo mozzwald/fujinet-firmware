@@ -14,10 +14,10 @@
 #define FN_VERSION_MINOR 5
 #define FN_VERSION_PATCH 2
 
-#define FN_VERSION_BUILD "a791667fe8645b03fc660f337bdb8cf8fe6b9cef"
+#define FN_VERSION_BUILD "b5bded84e4a323b372b3aab3760a21f2db7753a8"
 
-#define FN_VERSION_DATE "2025-12-17 08:35:55"
+#define FN_VERSION_DATE "2026-02-09 18:08:13"
 
-#define FN_VERSION_FULL "v1.5.2"
+#define FN_VERSION_FULL "v1.5.2.netstream-android"
 
 #endif /* _VERSION_H */
