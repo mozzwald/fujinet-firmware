@@ -29,34 +29,44 @@ NetworkProtocol* ProtocolParser::createProtocol(std::string scheme, std::string 
     {
         case "TCP"_sh:
             protocol = new NetworkProtocolTCP(receiveBuffer, transmitBuffer, specialBuffer);
+            protocol->protocol_type = NETWORK_PROTOCOL_TCP;
             break;
         case "UDP"_sh:
             protocol = new NetworkProtocolUDP(receiveBuffer, transmitBuffer, specialBuffer);
+            protocol->protocol_type = NETWORK_PROTOCOL_UDP;
             break;
         case "TEST"_sh:
             protocol = new NetworkProtocolTest(receiveBuffer, transmitBuffer, specialBuffer);
+            protocol->protocol_type = NETWORK_PROTOCOL_TEST;
             break;
         case "TELNET"_sh:
             protocol = new NetworkProtocolTELNET(receiveBuffer, transmitBuffer, specialBuffer);
+            protocol->protocol_type = NETWORK_PROTOCOL_TELNET;
             break;
         case "TNFS"_sh:
             protocol = new NetworkProtocolTNFS(receiveBuffer, transmitBuffer, specialBuffer);
+            protocol->protocol_type = NETWORK_PROTOCOL_TNFS;
             break;
         case "FTP"_sh:
             protocol = new NetworkProtocolFTP(receiveBuffer, transmitBuffer, specialBuffer);
+            protocol->protocol_type = NETWORK_PROTOCOL_FTP;
             break;
         case "HTTP"_sh:
         case "HTTPS"_sh:
             protocol = new NetworkProtocolHTTP(receiveBuffer, transmitBuffer, specialBuffer);
+            protocol->protocol_type = NETWORK_PROTOCOL_HTTP;
             break;
         case "SSH"_sh:
             protocol = new NetworkProtocolSSH(receiveBuffer, transmitBuffer, specialBuffer);
+            protocol->protocol_type = NETWORK_PROTOCOL_SSH;
             break;
         case "SMB"_sh:
             protocol = new NetworkProtocolSMB(receiveBuffer, transmitBuffer, specialBuffer);
+            protocol->protocol_type = NETWORK_PROTOCOL_SMB;
             break;
         case "SD"_sh:
             protocol = new NetworkProtocolSD(receiveBuffer, transmitBuffer, specialBuffer);
+            protocol->protocol_type = NETWORK_PROTOCOL_SD;
             break;
         default:
             Debug_printf("Invalid protocol: %s\n", scheme.c_str());

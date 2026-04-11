@@ -49,10 +49,26 @@ enum {
   FUJI_CMD_SPECIAL_QUERY     = 0xFF,
 };
 
+enum NetworkProtocolType
+{
+    NETWORK_PROTOCOL_UNKNOWN = 0,
+    NETWORK_PROTOCOL_TCP,
+    NETWORK_PROTOCOL_UDP,
+    NETWORK_PROTOCOL_TEST,
+    NETWORK_PROTOCOL_TELNET,
+    NETWORK_PROTOCOL_TNFS,
+    NETWORK_PROTOCOL_FTP,
+    NETWORK_PROTOCOL_HTTP,
+    NETWORK_PROTOCOL_SSH,
+    NETWORK_PROTOCOL_SMB,
+    NETWORK_PROTOCOL_SD,
+};
+
 class NetworkProtocol
 {
 public:
     std::string name = "UNKNOWN";
+    NetworkProtocolType protocol_type = NETWORK_PROTOCOL_UNKNOWN;
     /**
      * Was the last command a write?
      */
