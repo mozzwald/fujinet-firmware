@@ -22,3 +22,4 @@ components:
 tweaks:
   # webui tweaks, if any
   config_ng: true
+  platform: ATARI

@@ -67,6 +67,7 @@ const string fnHttpServiceParser::substitute_tag(const string &tag)
         FN_PRINTER_ENABLED,
         FN_MODEM_ENABLED,
         FN_MODEM_SNIFFER_ENABLED,
+        FN_MODEM_CONNECT_DELAY_MS,
 #ifndef ESP_PLATFORM
         FN_SERIAL_PORT,
         FN_SERIAL_PORT_BAUD,
@@ -187,6 +188,7 @@ const string fnHttpServiceParser::substitute_tag(const string &tag)
         "FN_PRINTER_ENABLED",
         "FN_MODEM_ENABLED",
         "FN_MODEM_SNIFFER_ENABLED",
+        "FN_MODEM_CONNECT_DELAY_MS",
 #ifndef ESP_PLATFORM
         "FN_SERIAL_PORT",
         "FN_SERIAL_PORT_BAUD",
@@ -487,6 +489,9 @@ const string fnHttpServiceParser::substitute_tag(const string &tag)
         break;
     case FN_MODEM_SNIFFER_ENABLED:
         resultstream << Config.get_modem_sniffer_enabled();
+        break;
+    case FN_MODEM_CONNECT_DELAY_MS:
+        resultstream << Config.get_modem_connect_delay_ms();
         break;
     case FN_BOIP_ENABLED:
         resultstream << Config.get_boip_enabled();
