@@ -1,6 +1,8 @@
 
 #include "led.h"
 
+#include "../../include/debug.h"
+
 #include "fnSystem.h"
 #include "fnLedStrip.h"
 
@@ -32,6 +34,15 @@ void LedManager::setup()
 #elif defined(PINMAP_RS232_REV0)
     fnSystem.set_pin_mode(PIN_LED_BUS, gpio_mode_t::GPIO_MODE_INPUT_OUTPUT);
     fnSystem.digital_write(PIN_LED_BUS, DIGI_HIGH);
+
+    fnSystem.set_pin_mode(PIN_LED_WIFI, gpio_mode_t::GPIO_MODE_INPUT_OUTPUT);
+    fnSystem.digital_write(PIN_LED_WIFI, DIGI_HIGH);
+#elif defined(PINMAP_LYNX_S3)
+    fnSystem.set_pin_mode(PIN_LED_BUS, gpio_mode_t::GPIO_MODE_INPUT_OUTPUT);
+    fnSystem.digital_write(PIN_LED_BUS, DIGI_HIGH);
+
+    fnSystem.set_pin_mode(PIN_LED_BT, gpio_mode_t::GPIO_MODE_INPUT_OUTPUT);
+    fnSystem.digital_write(PIN_LED_BT, DIGI_HIGH);
 
     fnSystem.set_pin_mode(PIN_LED_WIFI, gpio_mode_t::GPIO_MODE_INPUT_OUTPUT);
     fnSystem.digital_write(PIN_LED_WIFI, DIGI_HIGH);

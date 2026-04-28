@@ -15,57 +15,6 @@
 
 #define IDLE_TIME 500 // Idle tolerance in microseconds (roughly three characters at 62500 baud)
 
-static QueueHandle_t reset_evt_queue = NULL;
-
-static void IRAM_ATTR comlynx_reset_isr_handler(void *arg)
-{
-    uint32_t gpio_num = (uint32_t)arg;
-    xQueueSendFromISR(reset_evt_queue, &gpio_num, NULL);
-}
-
-static void comlynx_reset_intr_task(void *arg)
-{
-    uint32_t io_num;
-    bool was_reset = false;
-    bool reset_debounced = false;
-    uint64_t start, current, elapsed;
-    systemBus *b = (systemBus *)arg;
-
-    // reset_detect_status = gpio_get_level((gpio_num_t)PIN_COMLYNX_RESET);
-    start = current = esp_timer_get_time();
-    for (;;)
-    {
-        if (xQueueReceive(reset_evt_queue, &io_num, portMAX_DELAY))
-        {
-            start = esp_timer_get_time();
-            printf("Comlynx RESET Asserted\n");
-            was_reset = true;
-        }
-        current = esp_timer_get_time();
-
-        elapsed = current - start;
-
-        if (was_reset)
-        {
-            if (elapsed >= COMLYNX_RESET_DEBOUNCE_PERIOD)
-            {
-                reset_debounced = true;
-            }
-        }
-
-        if (was_reset && reset_debounced)
-        {
-            was_reset = false;
-            // debounce period for reset completed
-            reset_debounced = false;
-            ;
-        }
-
-        b->reset();
-        vTaskDelay(1);
-    }
-}
-
 uint8_t comlynx_checksum(uint8_t *buf, unsigned short len)
 {
     uint8_t checksum = 0x00;
@@ -185,7 +134,7 @@ void virtualDevice::comlynx_send_length(uint16_t l)
     comlynx_send(l & 0xFF);
 
     #ifdef DEBUG
-        Debug_printf("comlynx_send_length - len: %ld\n", l);
+        Debug_printf("comlynx_send_length - len: %ld\n", (long int)l);
     #endif
 }
 
@@ -316,15 +265,6 @@ void systemBus::service()
 void systemBus::setup()
 {
     Debug_println("COMLYNX SETUP");
-
-    // Set up interrupt for RESET line
-    reset_evt_queue = xQueueCreate(10, sizeof(uint32_t));
-    // Start card detect task
-    xTaskCreate(comlynx_reset_intr_task, "comlynx_reset_intr_task", 2048, this, 10, NULL);
-    // Enable interrupt for card detection
-    fnSystem.set_pin_mode(PIN_COMLYNX_RESET, gpio_mode_t::GPIO_MODE_INPUT, SystemManager::pull_updown_t::PULL_UP, GPIO_INTR_NEGEDGE);
-    // Add the card detect handler
-    gpio_isr_handler_add((gpio_num_t)PIN_COMLYNX_RESET, comlynx_reset_isr_handler, (void *)PIN_CARD_DETECT_FIX);
 
     // Set up UDP device
     _udpDev = new lynxUDPStream();
@@ -478,7 +418,7 @@ void systemBus::setRedeyeMode(bool enable)
 
 void systemBus::setRedeyeGameRemap(uint32_t remap)
 {
-    Debug_printf("setRedeyeGameRemap, %d\n", remap);
+    Debug_printf("setRedeyeGameRemap, %d\n", (int) remap);
 
     // handle pure updstream games
     if ((remap >> 8) == 0xE1) {

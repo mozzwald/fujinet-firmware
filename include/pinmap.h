@@ -23,6 +23,7 @@
 #include "pinmap/esp32s3.h"
 #include "pinmap/esp32s3-wroom-1.h"
 #include "pinmap/lynx.h"
+#include "pinmap/lynx-s3.h"
 #include "pinmap/rs232_rev0.h"
 #include "pinmap/rs232_s3.h"
 #include "pinmap/cx16.h"

@@ -146,7 +146,7 @@ static void setup_card_detect(gpio_num_t pin)
     // Create a queue to handle card detect event from ISR
     card_detect_evt_queue = xQueueCreate(10, sizeof(gpio_num_t));
     // Start card detect task
-    xTaskCreate(card_detect_intr_task, "card_detect_intr_task", 2048, (void *)pin, 10, NULL);
+    xTaskCreate(card_detect_intr_task, "card_detect_intr_task", 6144, (void *)pin, 10, NULL);
     // Enable interrupt for card detection
     fnSystem.set_pin_mode(pin, gpio_mode_t::GPIO_MODE_INPUT, SystemManager::pull_updown_t::PULL_NONE, GPIO_INTR_ANYEDGE);
     // Add the card detect handler
@@ -230,28 +230,7 @@ void SystemManager::set_pin_mode(uint8_t pin, gpio_mode_t mode, pull_updown_t pu
 void IRAM_ATTR SystemManager::digital_write(uint8_t pin, uint8_t val)
 {
 #ifdef ESP_PLATFORM
-    if (val)
-    {
-        if (pin < 32)
-        {
-            GPIO.out_w1ts = ((uint32_t)1 << pin);
-        }
-        else if (pin < 34)
-        {
-            GPIO.out1_w1ts.val = ((uint32_t)1 << (pin - 32));
-        }
-    }
-    else
-    {
-        if (pin < 32)
-        {
-            GPIO.out_w1tc = ((uint32_t)1 << pin);
-        }
-        else if (pin < 34)
-        {
-            GPIO.out1_w1tc.val = ((uint32_t)1 << (pin - 32));
-        }
-    }
+    gpio_set_level((gpio_num_t)pin, val ? 1 : 0);
 #else
     Debug_println("SystemManager::digital_write() not implemented");
 #endif
@@ -262,18 +241,11 @@ void IRAM_ATTR SystemManager::digital_write(uint8_t pin, uint8_t val)
 int IRAM_ATTR SystemManager::digital_read(uint8_t pin)
 {
 #ifdef ESP_PLATFORM
-    if (pin < 32)
-    {
-        return (GPIO.in >> pin) & 0x1;
-    }
-    else if (pin < 40)
-    {
-        return (GPIO.in1.val >> (pin - 32)) & 0x1;
-    }
+    return gpio_get_level((gpio_num_t)pin);
 #else
     Debug_println("SystemManager::digital_read() not implemented");
-#endif
     return 0;
+#endif
 }
 
 #ifdef ESP_PLATFORM
@@ -1023,6 +995,9 @@ const char *SystemManager::get_hardware_ver_str()
     case 2:
         return "Lynx DEVKITC";
         break;
+    case 3:
+        return "Lynx Rev1 (S3)";
+        break;
 #elif defined(BUILD_RS232)
     /* RS232 */
     case 1 :
@@ -1277,6 +1252,9 @@ void SystemManager::check_hardware_ver()
     */
 #   if defined(NO_BUTTONS)
     _hardware_version = 2;
+#   elif CONFIG_IDF_TARGET_ESP32S3
+    _hardware_version = 3;
+    safe_reset_gpio = PIN_BUTTON_C;
 #   else
     _hardware_version = 1;
     safe_reset_gpio = PIN_BUTTON_C;
