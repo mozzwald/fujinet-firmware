@@ -23,6 +23,8 @@
 
 #define NETSTREAM_BUFFER_SIZE 2048
 #define NETSTREAM_RX_RING_SIZE 2048
+#define NETSTREAM_RX_HIGH_WATERMARK (NETSTREAM_RX_RING_SIZE * 3 / 4)
+#define NETSTREAM_RX_LOW_WATERMARK (NETSTREAM_RX_RING_SIZE / 2)
 #define NETSTREAM_PACKET_TIMEOUT 5000
 #define NETSTREAM_MIN_GAP_US_MIDI 320                           // ~1 byte at 31.25kbps
 #define NETSTREAM_MIN_GAP_US_SIO 520                            // ~1 byte at 19.2kbps
@@ -47,6 +49,7 @@ private:
     uint16_t rx_tail = 0;
     uint16_t rx_count = 0;
     uint32_t rx_drop_count = 0;
+    bool tcp_rx_paused = false;
     bool cassette_was_active = false;
 
     uint64_t last_rx_us = 0;
@@ -72,6 +75,7 @@ public:
     bool netstream_tx_clock_external = false;
     bool netstream_rx_clock_external = false;
     bool netstream_has_audf3 = false;
+    bool netstream_unpaced = false;
     uint8_t netstream_audf3 = 0;
     int netstream_baud = SIO_STANDARD_BAUDRATE;
 

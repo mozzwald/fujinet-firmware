@@ -116,13 +116,13 @@ void sioNetStream::pace_to_atari(uint32_t min_gap_us)
     while (rx_count > 0 && send_count < 16)
     {
         uint64_t now_us = netstream_time_us();
-        if ((now_us - last_tx_us) < min_gap_us)
+        if (!netstream_unpaced && (now_us - last_tx_us) < min_gap_us)
             break;
         uint8_t out = rx_ring[rx_tail];
         rx_tail = (rx_tail + 1) % NETSTREAM_RX_RING_SIZE;
         rx_count--;
         SYSTEM_BUS.write(&out, 1);
-        last_tx_us += min_gap_us;
+        last_tx_us = netstream_unpaced ? now_us : last_tx_us + min_gap_us;
         send_count++;
     }
 }
@@ -191,6 +191,7 @@ void sioNetStream::sio_enable_netstream()
     rx_tail = 0;
     rx_count = 0;
     rx_drop_count = 0;
+    tcp_rx_paused = false;
     Debug_println("NETSTREAM mode ENABLED");
 }
 
@@ -295,39 +296,52 @@ void sioNetStream::sio_handle_netstream()
     }
     else if (ensure_netstream_ready())
     {
-        // if there’s data available, read from the TCP stream
-        size_t available = netStreamTcp.available();
-        while (available > 0)
+        if (tcp_rx_paused && rx_count <= NETSTREAM_RX_LOW_WATERMARK)
+            tcp_rx_paused = false;
+
+        // Do not call available() while paused: it drains the TCP socket into
+        // fnTcpClient's internal buffer and defeats TCP window backpressure.
+        while (!tcp_rx_paused && rx_count < NETSTREAM_RX_HIGH_WATERMARK)
         {
-            size_t to_read = (available > NETSTREAM_BUFFER_SIZE) ? NETSTREAM_BUFFER_SIZE : available;
-            int packetSize = netStreamTcp.read(buf_net, to_read);
+            size_t free_space = NETSTREAM_RX_RING_SIZE - rx_count;
+            size_t available;
+            size_t to_read;
+            int packetSize;
+
+            if (free_space == 0)
+            {
+                tcp_rx_paused = true;
+                break;
+            }
+
+            available = netStreamTcp.available();
+            if (available == 0)
+                break;
+
+            to_read = (available > free_space) ? free_space : available;
+            if (to_read > NETSTREAM_BUFFER_SIZE)
+                to_read = NETSTREAM_BUFFER_SIZE;
+
+            packetSize = netStreamTcp.read(buf_net, to_read);
             if (packetSize <= 0)
                 break;
 
-            // Buffer incoming TCP bytes for paced UART output.
+            // Buffer incoming TCP bytes for paced UART output. TCP reads are
+            // capped to free ring space so this path should not need to drop.
             for (int i = 0; i < packetSize; i++)
             {
-                if (rx_count < NETSTREAM_RX_RING_SIZE)
-                {
-                    rx_ring[rx_head] = buf_net[i];
-                    rx_head = (rx_head + 1) % NETSTREAM_RX_RING_SIZE;
-                    rx_count++;
-                }
-                else
-                {
-                    // Drop oldest byte to keep the most recent stream data.
-                    rx_tail = (rx_tail + 1) % NETSTREAM_RX_RING_SIZE;
-                    rx_ring[rx_head] = buf_net[i];
-                    rx_head = (rx_head + 1) % NETSTREAM_RX_RING_SIZE;
-                    rx_drop_count++;
-                }
+                rx_ring[rx_head] = buf_net[i];
+                rx_head = (rx_head + 1) % NETSTREAM_RX_RING_SIZE;
+                rx_count++;
             }
             last_rx_us = netstream_time_us();
 #ifdef DEBUG_NETSTREAM
             Debug_printf("STREAM-IN [%llu ms]: ", (unsigned long long)(netstream_time_us() / 1000ULL));
             util_dump_bytes(buf_net, packetSize);
 #endif
-            available = netStreamTcp.available();
+
+            if (rx_count >= NETSTREAM_RX_HIGH_WATERMARK)
+                tcp_rx_paused = true;
         }
     }
 

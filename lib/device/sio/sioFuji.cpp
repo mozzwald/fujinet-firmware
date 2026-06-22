@@ -637,6 +637,7 @@ void sioFuji::sio_enable_netstream()
     bool tx_clock_external = (flags & 0x04) != 0;
     bool rx_clock_external = (flags & 0x08) != 0;
     bool video_pal = (flags & 0x10) != 0;
+    bool unpaced = (flags & 0x40) != 0;
 
     size_t copy_len = host_len;
     if (copy_len > sizeof(host_out) - 1)
@@ -648,9 +649,10 @@ void sioFuji::sio_enable_netstream()
 
     Debug_printf("Fuji cmd ENABLE NETSTREAM: HOST:%s PORT: %d\n", host_out, port);
 #ifdef DEBUG_NETSTREAM
-    Debug_printf("NETSTREAM opts: transport=%s register=%s flags=0x%02X audf3=%u\n",
+    Debug_printf("NETSTREAM opts: transport=%s register=%s unpaced=%s flags=0x%02X audf3=%u\n",
                  (stream_mode == 0) ? "udp" : "tcp",
                  register_enabled ? "on" : "off",
+                 unpaced ? "on" : "off",
                  flags,
                  audf3);
 #endif
@@ -671,7 +673,8 @@ void sioFuji::sio_enable_netstream()
                                         video_pal,
                                         tx_clock_external,
                                         rx_clock_external,
-                                        has_audf3);
+                                        has_audf3,
+                                        unpaced);
 }
 
 void sioFuji::sio_qrcode_input()
