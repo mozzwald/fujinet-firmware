@@ -33,7 +33,8 @@ public:
     bool submit_pcm(AudioSourceKind source_kind,
                     const AudioFormat &format,
                     const int16_t *pcm_frames,
-                    size_t frame_count);
+                    size_t frame_count,
+                    AudioCodec codec = AudioCodec::PCM);
     bool process_pending();
     void stop();
     void pause();

@@ -63,7 +63,9 @@ private:
     void set_error(AudioError error);
     void clear_error();
     bool submit_test_tone();
+    bool submit_sd_wav();
     bool is_generated_test_source() const;
+    bool is_sd_source() const;
 };
 
 #endif // AUDIODEVICE_H

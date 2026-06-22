@@ -112,7 +112,8 @@ AudioCounters AudioService::counters() const
 bool AudioService::submit_pcm(AudioSourceKind source_kind,
                               const AudioFormat &format,
                               const int16_t *pcm_frames,
-                              size_t frame_count)
+                              size_t frame_count,
+                              AudioCodec codec)
 {
     if (pcm_frames == nullptr && frame_count != 0)
     {
@@ -123,6 +124,7 @@ bool AudioService::submit_pcm(AudioSourceKind source_kind,
     AudioCommand command;
     command.kind = AudioCommandKind::SUBMIT_PCM;
     command.source_kind = source_kind;
+    command.codec = codec;
     command.format = format;
     command.generation = _generation;
 
@@ -246,9 +248,14 @@ bool AudioService::enqueue(AudioCommand &command)
         {
             _status.state = AudioState::BUFFERING;
             _status.error = AudioError::NONE;
-            _status.codec = AudioCodec::PCM;
+            _status.codec = command.codec;
             _status.source_kind = command.source_kind;
             _status.format = command.format;
+            _status.position_ms = 0;
+            _status.duration_ms = command.format.sample_rate == 0
+                                      ? 0
+                                      : static_cast<uint32_t>((static_cast<uint64_t>(command.pcm_frames.size()) * 1000) /
+                                                              command.format.sample_rate);
         }
 #ifdef ESP_PLATFORM
         unlock_status();
@@ -377,6 +384,10 @@ void AudioService::process_submit_pcm(const AudioCommand &command)
 #endif
     _counters.decoded_frames += static_cast<uint32_t>(written);
     _counters.bytes_read += static_cast<uint32_t>(written * command.format.channels * sizeof(int16_t));
+    _status.position_ms = command.format.sample_rate == 0
+                              ? 0
+                              : static_cast<uint32_t>((static_cast<uint64_t>(written) * 1000) /
+                                                      command.format.sample_rate);
 #ifdef ESP_PLATFORM
     unlock_status();
 #endif

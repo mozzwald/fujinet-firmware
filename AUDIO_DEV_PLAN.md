@@ -913,20 +913,20 @@ Exit criteria:
 Goal: validate the complete engine using a seekable local source before adding
 network timing and codec complexity.
 
-- [ ] Implement `AudioSourceSD`.
-- [ ] Normalize and validate `sd:` paths.
-- [ ] Prevent paths from escaping the configured SD root.
-- [ ] Implement file open, read, EOF, close, cancel, and seek.
-- [ ] Implement SD reads in small bounded chunks and check cancellation between
-      chunks because the current local `FileHandler` path uses blocking
-      `fread()` and cannot interrupt an active read.
-- [ ] Implement WAV RIFF parsing.
-- [ ] Support PCM WAV input.
-- [ ] Support at least 8-bit unsigned and 16-bit signed PCM.
-- [ ] Support mono input.
-- [ ] Downmix stereo input to mono.
-- [ ] Reject unsupported WAV encodings with a stable error.
-- [ ] Implement position and duration reporting.
+- [x] Implement `AudioSourceSD`.
+- [x] Normalize and validate `sd:` paths.
+- [x] Prevent paths from escaping the configured SD root.
+- [x] Implement file open, read, EOF, close, cancel, and seek.
+- [x] Implement SD reads in small bounded chunks.
+- [ ] Check cancellation between chunks because the current local `FileHandler`
+      path uses blocking `fread()` and cannot interrupt an active read.
+- [x] Implement WAV RIFF parsing.
+- [x] Support PCM WAV input.
+- [x] Support at least 8-bit unsigned and 16-bit signed PCM.
+- [x] Support mono input.
+- [x] Downmix stereo input to mono.
+- [x] Reject unsupported WAV encodings with a stable error.
+- [x] Implement position and duration reporting.
 - [ ] Implement seek for WAV/PCM files.
 - [ ] Test truncated and malformed WAV headers.
 - [ ] Test removal or failure of the SD card during playback.
@@ -939,6 +939,18 @@ Exit criteria:
 - [ ] The same command plays the file on FujiNet-PC.
 - [ ] Disk and configuration SIO requests remain responsive during playback.
 - [ ] Position, duration, pause, resume, stop, volume, and seek work.
+
+Phase 3 implementation note:
+
+- The first SD/WAV path decodes `sd:/...wav` during `AUDIOCMD_PLAY`, converts
+  PCM WAV data to mono signed 16-bit frames, and submits the decoded buffer to
+  `AudioService`.
+- Supported WAV input for this slice is RIFF/WAVE PCM format tag 1, mono or
+  stereo, 8-bit unsigned or 16-bit signed. Stereo is downmixed to mono.
+- The Atari manual test app now has a fixed `W` command for `sd:/fnaudio.wav`.
+- This is not yet true streaming playback. Large WAV files may fail allocation,
+  seek is not yet wired into playback state, and stop responsiveness during an
+  active long write still needs the next service/source streaming refactor.
 
 ## Phase 4: Shared audio device and Atari bus registration
 

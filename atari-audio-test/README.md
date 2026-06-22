@@ -39,8 +39,11 @@ Expected behavior with the `$65` audio device registered:
 - Play submits the generated test tone to the FujiNet audio service. On
   FujiNet-PC this should be audible through the host output device when one is
   available.
+- `W` sets the source to `sd:/fnaudio.wav` for SD/WAV playback testing. Put a
+  small PCM WAV file named `fnaudio.wav` at the SD root, then press `W` and `P`.
 - Pause, resume, stop, volume, info, and metadata can be selected from the menu.
-- Seek is expected to fail until seekable SD/HTTP sources are implemented.
+- Seek is expected to fail until service-level seek support is wired to SD/HTTP
+  sources.
 
 If FujiNet-PC logs `SIO CMD ignored` for command frames beginning with
 `65`, rebuild FujiNet-PC for Atari and confirm the `$65` audio-device
@@ -51,7 +54,8 @@ registration is present in the build being run.
 - `C`: capabilities
 - `S`: basic status
 - `I`: extended status
-- `O`: set source
+- `O`: set generated tone source
+- `W`: set `sd:/fnaudio.wav`
 - `P`: play
 - `A`: pause
 - `R`: resume
@@ -61,5 +65,5 @@ registration is present in the build being run.
 - `K`: seek
 - `Q`: quit
 
-The initial source string is `gen:test-tone`. This gives the firmware side a
-simple generated-audio target before SD, HTTP, WAV, or MP3 sources exist.
+The generated tone source is `gen:test-tone`. The fixed WAV source is
+`sd:/fnaudio.wav` so the same bootable app can be used as SD/WAV support grows.

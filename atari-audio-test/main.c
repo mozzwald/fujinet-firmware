@@ -28,7 +28,8 @@
 extern unsigned char sio_call(void);
 
 static unsigned char buffer[128];
-static const char source[] = "gen:test-tone";
+static const char tone_source[] = "gen:test-tone";
+static const char wav_source[] = "sd:/fnaudio.wav";
 
 static void wait_key(void)
 {
@@ -116,7 +117,7 @@ static void cmd_info(void)
     show_result("info", AUDIOCMD_GET_INFO, st, 32);
 }
 
-static void cmd_set_source(void)
+static void cmd_set_source(const char *source)
 {
     unsigned char st;
     unsigned int len = (unsigned int)strlen(source);
@@ -162,7 +163,8 @@ static void draw_menu(void)
     cputs("C capabilities\r\n");
     cputs("S status\r\n");
     cputs("I info\r\n");
-    cputs("O set source\r\n");
+    cputs("O set tone source\r\n");
+    cputs("W set sd:/fnaudio.wav\r\n");
     cputs("P play\r\n");
     cputs("A pause\r\n");
     cputs("R resume\r\n");
@@ -201,7 +203,11 @@ int main(void)
             break;
         case 'o':
         case 'O':
-            cmd_set_source();
+            cmd_set_source(tone_source);
+            break;
+        case 'w':
+        case 'W':
+            cmd_set_source(wav_source);
             break;
         case 'p':
         case 'P':

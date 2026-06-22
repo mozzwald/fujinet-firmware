@@ -273,6 +273,7 @@ set(SOURCES src/main.cpp
     lib/audio/AudioCommandQueue.h lib/audio/AudioCommandQueue.cpp
     lib/audio/AudioSource.h
     lib/audio/AudioSourceMemory.h lib/audio/AudioSourceMemory.cpp
+    lib/audio/AudioSourceSD.h lib/audio/AudioSourceSD.cpp
     lib/audio/AudioDecoder.h
     lib/audio/AudioSink.h
     lib/audio/AudioMixer.h lib/audio/AudioMixer.cpp

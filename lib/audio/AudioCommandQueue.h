@@ -12,6 +12,7 @@ struct AudioCommand
 {
     AudioCommandKind kind = AudioCommandKind::NONE;
     AudioSourceKind source_kind = AudioSourceKind::NONE;
+    AudioCodec codec = AudioCodec::PCM;
     AudioFormat format;
     std::vector<int16_t> pcm_frames;
     uint8_t volume = 100;
