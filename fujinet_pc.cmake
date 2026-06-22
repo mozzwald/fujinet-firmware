@@ -219,6 +219,7 @@ set(SOURCES src/main.cpp
     lib/telnet/libtelnet.h lib/telnet/libtelnet.c
     lib/fnjson/fnjson.h lib/fnjson/fnjson.cpp
     components_pc/mongoose/mongoose.h components_pc/mongoose/mongoose.c
+    components_pc/miniaudio/miniaudio.c
     lib/webdav/WebDAV.h lib/webdav/WebDAV.cpp
     lib/webdav/IndexParser.h lib/webdav/IndexParser.cpp
     lib/http/httpService.h lib/http/mgHttpService.cpp
@@ -267,6 +268,19 @@ set(SOURCES src/main.cpp
     lib/network-protocol/SSHKeygen.h lib/network-protocol/SSHKeygen.cpp
     lib/network-protocol/SSHCopyId.h lib/network-protocol/SSHCopyId.cpp
     lib/network-protocol/SD.h lib/network-protocol/SD.cpp
+    lib/audio/AudioTypes.h
+    lib/audio/AudioDebug.h
+    lib/audio/AudioCommandQueue.h lib/audio/AudioCommandQueue.cpp
+    lib/audio/AudioSource.h
+    lib/audio/AudioSourceMemory.h lib/audio/AudioSourceMemory.cpp
+    lib/audio/AudioDecoder.h
+    lib/audio/AudioSink.h
+    lib/audio/AudioMixer.h lib/audio/AudioMixer.cpp
+    lib/audio/AudioSinkNull.h lib/audio/AudioSinkNull.cpp
+    lib/audio/AudioSinkMiniaudio.h lib/audio/AudioSinkMiniaudio.cpp
+    lib/audio/AudioRingBuffer.h lib/audio/AudioRingBuffer.cpp
+    lib/audio/AudioService.h lib/audio/AudioService.cpp
+    lib/audio/AudioTestTone.h lib/audio/AudioTestTone.cpp
     lib/fuji/fujiHost.h lib/fuji/fujiHost.cpp
     lib/fuji/fujiDisk.h lib/fuji/fujiDisk.cpp
     lib/bus/bus.h
@@ -275,6 +289,7 @@ set(SOURCES src/main.cpp
     lib/device/printer.h
     lib/device/modem.h
     lib/device/cassette.h
+    lib/device/audioDevice.h lib/device/audioDevice.cpp
     lib/device/fujiDevice.h lib/device/fujiDevice.cpp
     lib/device/network.h
     lib/device/netstream.h
@@ -304,6 +319,7 @@ if(FUJINET_TARGET STREQUAL "ATARI")
     lib/device/sio/printer.h lib/device/sio/printer.cpp
     lib/device/sio/printerlist.h lib/device/sio/printerlist.cpp
     lib/device/sio/cassette.h lib/device/sio/cassette.cpp
+    lib/device/sio/audio.h lib/device/sio/audio.cpp
     lib/device/sio/sioFuji.h lib/device/sio/sioFuji.cpp
     lib/device/sio/network.h lib/device/sio/network.cpp
     lib/device/sio/netstream.h lib/device/sio/netstream.cpp

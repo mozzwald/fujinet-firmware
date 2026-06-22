@@ -11,7 +11,7 @@
 #else
   #define MA_NO_DECODING
   #define MA_NO_ENCODING
-  #include "miniaudio.c"
+  #include "miniaudio.h"
   #include "compat_string.h"
 #endif
 

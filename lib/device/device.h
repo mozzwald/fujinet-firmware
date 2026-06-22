@@ -12,12 +12,14 @@
 # include "sio/printer.h"
 # include "sio/printerlist.h"
 # include "sio/siocpm.h"
+# include "sio/audio.h"
 # include "sio/voice.h"
 # include "sio/sioFuji.h"
 
     sioClock clockDevice;
     sioVoice sioV;
     sioNetStream streamDev;
+    extern sioAudio audioDev;
     // sioCassette sioC; // now part of sioFuji theFuji object
     modem *sioR;
     sioCPM sioZ;

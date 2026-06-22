@@ -182,6 +182,18 @@ enum fujiCommandID_t : uint8_t {
     APETIMECMD_GET_GENERAL             = 0x47, // G
     APETIMECMD_GET_ATARI               = 0x41, // A
 
+    AUDIOCMD_STATUS                    = 0x53, // S
+    AUDIOCMD_SET_SOURCE                = 0x4F, // O
+    AUDIOCMD_PLAY                      = 0x50, // P
+    AUDIOCMD_PAUSE                     = 0x41, // A
+    AUDIOCMD_RESUME                    = 0x52, // R
+    AUDIOCMD_STOP                      = 0x58, // X
+    AUDIOCMD_SET_VOLUME                = 0x56, // V
+    AUDIOCMD_GET_INFO                  = 0x49, // I
+    AUDIOCMD_GET_METADATA              = 0x4D, // M
+    AUDIOCMD_SEEK                      = 0x4B, // K
+    AUDIOCMD_CAPABILITIES              = 0x3F, // ?
+
     CPMCMD_INIT                        = 0x47, // G
 };
 

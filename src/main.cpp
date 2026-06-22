@@ -237,6 +237,8 @@ void main_setup(int argc, char *argv[])
 #ifdef BUILD_ATARI
     theFuji->setup();
     SYSTEM_BUS.addDevice(theFuji, FUJI_DEVICEID_FUJINET); // the FUJINET!
+    audioDev.setup();
+    SYSTEM_BUS.addDevice(&audioDev, FUJI_DEVICEID_AUDIO); // A: audio device
 
     if (Config.get_apetime_enabled() == true)
         SYSTEM_BUS.addDevice(&clockDevice, FUJI_DEVICEID_CLOCK); // Clock for Atari, APETime compatible, but extended for additional return types
