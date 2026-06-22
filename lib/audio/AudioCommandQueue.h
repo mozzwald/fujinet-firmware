@@ -1,21 +1,19 @@
 #ifndef AUDIOCOMMANDQUEUE_H
 #define AUDIOCOMMANDQUEUE_H
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
-#include <vector>
 
 #include "AudioTypes.h"
 
 struct AudioCommand
 {
+    static constexpr size_t MAX_SOURCE_LENGTH = 1024;
+
     AudioCommandKind kind = AudioCommandKind::NONE;
-    AudioSourceKind source_kind = AudioSourceKind::NONE;
-    AudioCodec codec = AudioCodec::PCM;
-    AudioFormat format;
-    std::vector<int16_t> pcm_frames;
-    uint8_t volume = 100;
+    std::array<char, MAX_SOURCE_LENGTH + 1> source = {};
+    uint16_t source_length = 0;
     uint32_t generation = 0;
 };
 
@@ -28,14 +26,19 @@ public:
     bool pop(AudioCommand *command);
     void clear();
 
-    bool empty() const { return _queue.empty(); }
-    bool full() const { return _queue.size() >= _capacity; }
-    size_t size() const { return _queue.size(); }
+    bool empty() const { return _count == 0; }
+    bool full() const { return _count >= _capacity; }
+    size_t size() const { return _count; }
     size_t capacity() const { return _capacity; }
 
 private:
+    static constexpr size_t MAX_CAPACITY = 1;
+
     size_t _capacity;
-    std::deque<AudioCommand> _queue;
+    std::array<AudioCommand, MAX_CAPACITY> _queue = {};
+    size_t _head = 0;
+    size_t _tail = 0;
+    size_t _count = 0;
 };
 
 #endif // AUDIOCOMMANDQUEUE_H

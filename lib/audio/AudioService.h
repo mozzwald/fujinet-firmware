@@ -1,8 +1,10 @@
 #ifndef AUDIOSERVICE_H
 #define AUDIOSERVICE_H
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #ifndef ESP_PLATFORM
 #include <condition_variable>
@@ -30,11 +32,8 @@ public:
     AudioStatusSnapshot status() const;
     AudioCounters counters() const;
 
-    bool submit_pcm(AudioSourceKind source_kind,
-                    const AudioFormat &format,
-                    const int16_t *pcm_frames,
-                    size_t frame_count,
-                    AudioCodec codec = AudioCodec::PCM);
+    bool play_source(const std::string &source);
+    bool play_test_tone();
     bool process_pending();
     void stop();
     void pause();
@@ -42,9 +41,19 @@ public:
     void set_volume(uint8_t percent);
 
 private:
-    bool enqueue(AudioCommand &command);
+    bool enqueue(const AudioCommand &command);
     void process_command(const AudioCommand &command);
-    void process_submit_pcm(const AudioCommand &command);
+    void process_source(const AudioCommand &command);
+    void process_test_tone(const AudioCommand &command);
+    bool write_frames(const int16_t *frames, size_t frame_count, uint32_t generation);
+    bool wait_if_paused(uint32_t generation);
+    bool cancelled(uint32_t generation) const;
+    void finish_cancelled(uint32_t generation);
+    void set_stream_status(AudioSourceKind source_kind,
+                           AudioCodec codec,
+                           const AudioFormat &format,
+                           uint32_t duration_ms);
+    void update_progress(uint32_t bytes_read, size_t frames_written);
     void set_error(AudioError error);
     void set_state(AudioState state);
 
@@ -59,15 +68,16 @@ private:
     static void worker_task(void *arg);
 #endif
 
-    // Mutable service state is owned by AudioService. Public methods take the
-    // lock long enough to update snapshots or enqueue work, then return.
     AudioSink *_sink = nullptr;
     AudioMixer _mixer;
     AudioCommandQueue _commands;
     AudioStatusSnapshot _status;
     AudioCounters _counters;
-    uint32_t _generation = 1;
-    bool _stop_worker = false;
+    std::atomic<uint32_t> _generation{1};
+    std::atomic<bool> _pause_requested{false};
+    std::atomic<uint8_t> _requested_volume{100};
+    std::atomic<bool> _stop_worker{false};
+    uint64_t _stream_frames_written = 0;
 
 #ifndef ESP_PLATFORM
     mutable std::mutex _lock;

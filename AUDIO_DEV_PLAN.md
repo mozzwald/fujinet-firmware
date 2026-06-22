@@ -927,11 +927,42 @@ network timing and codec complexity.
 - [x] Downmix stereo input to mono.
 - [x] Reject unsupported WAV encodings with a stable error.
 - [x] Implement position and duration reporting.
+- [x] Replace whole-file WAV decoding with incremental, bounded decoding.
+- [x] Move SD open, WAV parsing, decoding, and sink writes out of the SIO
+      command handler and into the core-0 audio worker.
+- [x] Make `AUDIOCMD_PLAY` enqueue only a lightweight source request and return
+      promptly after accepting it.
+- [x] Remove whole-recording PCM storage from `AudioCommand`; queued control
+      commands must not own or copy an entire decoded file.
+- [x] Add an incremental `AudioDecoderWav` that retains only parser state and
+      bounded source bytes between calls.
+- [x] Decode and downmix WAV input into bounded signed 16-bit mono blocks,
+      initially 512 frames per block.
+- [x] Feed decoded blocks to the DAC sink incrementally instead of calling the
+      sink once with the complete recording.
+- [x] Keep DAC/DMA buffers in internal DMA-capable memory. WAV playback no
+      longer requires memory proportional to file duration.
+- [x] Check stop, pause, generation, and cancellation state between every
+      source read, decode block, and sink write.
+- [x] Use bounded sink-write waits so control commands can be observed during
+      playback.
+- [x] Update bytes-read, decoded-frame, position, duration, and state fields
+      incrementally during playback.
+- [x] Validate RIFF chunk sizes against the source length and reject malformed
+      sizes before seeking, reading, or allocating.
+- [x] Remove file-size-dependent allocations and use a fixed-capacity command
+      queue so allocation failure cannot be triggered by WAV duration.
 - [ ] Implement seek for WAV/PCM files.
 - [ ] Test truncated and malformed WAV headers.
 - [ ] Test removal or failure of the SD card during playback.
 - [ ] Test multiple sample rates representative of speech and music.
 - [ ] Test repeated EOF/replay/stop behavior.
+- [ ] Test a WAV larger than available ESP32 RAM and confirm peak audio memory
+      remains bounded and approximately independent of file duration.
+- [ ] Test pause, resume, and stop during active SD reads and DAC writes.
+- [ ] Monitor heap before, during, and after repeated playback for leaks and
+      loss of the largest free block.
+- [ ] Measure the audio worker stack high-water mark during WAV playback.
 
 Exit criteria:
 
@@ -939,6 +970,12 @@ Exit criteria:
 - [ ] The same command plays the file on FujiNet-PC.
 - [ ] Disk and configuration SIO requests remain responsive during playback.
 - [ ] Position, duration, pause, resume, stop, volume, and seek work.
+- [ ] A multi-hour WAV uses essentially the same bounded working memory as a
+      short WAV with the same format.
+- [ ] `AUDIOCMD_PLAY` performs no SD open, file read, WAV decode, or sink write
+      on the SIO service loop.
+- [ ] Allocation, malformed-input, SD-read, and output failures reach `ERROR`
+      without aborting or resetting FujiNet.
 
 Phase 3 implementation note:
 
@@ -948,9 +985,34 @@ Phase 3 implementation note:
 - Supported WAV input for this slice is RIFF/WAVE PCM format tag 1, mono or
   stereo, 8-bit unsigned or 16-bit signed. Stereo is downmixed to mono.
 - The Atari manual test app now has a fixed `W` command for `sd:/fnaudio.wav`.
-- This is not yet true streaming playback. Large WAV files may fail allocation,
-  seek is not yet wired into playback state, and stop responsiveness during an
-  active long write still needs the next service/source streaming refactor.
+- This first implementation is not true streaming playback. On classic ESP32,
+  testing a 1,323,044-byte WAV aborted in
+  `AudioService::submit_pcm()` while `std::vector<int16_t>::assign()` attempted
+  to allocate a second complete PCM buffer. The original decoded vector was
+  still live, and the command queue would have made further full-buffer copies.
+  FujiNet-PC succeeds because host memory can accommodate those copies.
+- The crash also confirmed that the original SD open, WAV parsing, whole-file
+  decoding, and PCM submission ran synchronously from `AUDIOCMD_PLAY` on the
+  core-1 SIO service loop. The implemented fix is a core-0 worker-side streaming
+  pipeline:
+
+  ```text
+  lightweight PLAY request
+          |
+          v
+  open/parse WAV on audio worker
+          |
+          v
+  bounded SD read -> bounded decode/downmix -> bounded DAC DMA write
+  ```
+
+- Moving vectors into the queue may remove individual copies, but is not the
+  architectural fix because memory would still scale with recording duration.
+  The streaming path must maintain constant bounded working memory regardless
+  of WAV size.
+- Seek is not yet wired into playback state. Stop and pause responsiveness must
+  be implemented through cancellation checks and bounded waits at each block
+  boundary.
 
 ## Phase 4: Shared audio device and Atari bus registration
 
@@ -1015,7 +1077,8 @@ Atari bus as dedicated device `$65` / `A:`.
 - [x] Return an appropriate native bus error for unsupported commands; Atari
       maps this to the required SIO NAK/error response.
 - [x] Ensure no command handler performs source open, DNS, network read,
-      decoding, or output draining synchronously.
+      decoding, or output draining synchronously. SD/WAV open, parse, decode,
+      and output now run from the core-0 audio worker.
 - [ ] Add shared device-command tests.
 - [ ] Add Atari SIO adapter/transaction tests where practical.
 - [x] Add a small Atari test program or documented test sequence using direct

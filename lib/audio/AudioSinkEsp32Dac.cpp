@@ -96,11 +96,14 @@ size_t AudioSinkEsp32Dac::write(const int16_t *pcm_frames, size_t frame_count)
             _dac_buffer[i] = pcm16_to_dac8(pcm_frames[frames_written + i], _volume);
 
         size_t bytes_loaded = 0;
-        esp_err_t err = dac_continuous_write(handle, _dac_buffer.data(), chunk_frames, &bytes_loaded, -1);
-        if (err != ESP_OK)
-            break;
-
+        esp_err_t err = dac_continuous_write(handle,
+                                             _dac_buffer.data(),
+                                             chunk_frames,
+                                             &bytes_loaded,
+                                             100);
         frames_written += bytes_loaded;
+        if (err != ESP_OK || bytes_loaded == 0)
+            break;
     }
 
     return frames_written;

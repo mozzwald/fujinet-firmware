@@ -63,11 +63,8 @@ enum class AudioSourceKind : uint8_t
 enum class AudioCommandKind : uint8_t
 {
     NONE = 0,
-    SUBMIT_PCM,
-    STOP,
-    PAUSE,
-    RESUME,
-    SET_VOLUME,
+    PLAY_SOURCE,
+    PLAY_TEST_TONE,
 };
 
 struct AudioFormat

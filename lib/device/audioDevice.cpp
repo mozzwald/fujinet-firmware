@@ -5,16 +5,12 @@
 #include <vector>
 
 #include "fujiCommandID.h"
-#include "../audio/AudioSourceSD.h"
-#include "../audio/AudioTestTone.h"
 
 namespace
 {
 constexpr uint8_t AUDIO_PROTOCOL_VERSION = 1;
 constexpr uint16_t AUDIO_MAX_SOURCE_LENGTH = 1024;
 constexpr uint16_t AUDIO_MAX_METADATA_CHUNK = 64;
-constexpr size_t AUDIO_TEST_TONE_FRAMES = 22050;
-constexpr size_t AUDIO_WAV_READ_CHUNK = 1024;
 
 enum AudioCapabilityFlags : uint8_t
 {
@@ -69,94 +65,6 @@ static uint8_t audio_flags_from_status(const AudioStatusSnapshot &status)
     return flags;
 }
 
-static uint16_t read_le16(const uint8_t *data)
-{
-    return static_cast<uint16_t>(data[0]) |
-           (static_cast<uint16_t>(data[1]) << 8);
-}
-
-static uint32_t read_le32(const uint8_t *data)
-{
-    return static_cast<uint32_t>(data[0]) |
-           (static_cast<uint32_t>(data[1]) << 8) |
-           (static_cast<uint32_t>(data[2]) << 16) |
-           (static_cast<uint32_t>(data[3]) << 24);
-}
-
-static bool read_exact(AudioSourceSD &source, uint8_t *buffer, size_t length)
-{
-    size_t offset = 0;
-    while (offset < length)
-    {
-        const int got = source.read(buffer + offset, length - offset);
-        if (got <= 0)
-            return false;
-        offset += static_cast<size_t>(got);
-    }
-    return true;
-}
-
-static int16_t wav_sample_to_s16(const uint8_t *sample, uint16_t bits_per_sample)
-{
-    if (bits_per_sample == 8)
-        return static_cast<int16_t>((static_cast<int32_t>(sample[0]) - 128) << 8);
-
-    return static_cast<int16_t>(read_le16(sample));
-}
-
-static bool append_wav_pcm(AudioSourceSD &source,
-                           uint32_t data_size,
-                           uint16_t channels,
-                           uint16_t bits_per_sample,
-                           std::vector<int16_t> *pcm)
-{
-    if (pcm == nullptr || channels == 0 || channels > 2)
-        return false;
-
-    const uint16_t bytes_per_sample = bits_per_sample / 8;
-    const uint16_t bytes_per_frame = channels * bytes_per_sample;
-    if ((bits_per_sample != 8 && bits_per_sample != 16) || bytes_per_frame == 0)
-        return false;
-
-    const uint32_t frame_count = data_size / bytes_per_frame;
-    pcm->clear();
-    pcm->reserve(frame_count);
-
-    std::vector<uint8_t> raw(AUDIO_WAV_READ_CHUNK);
-    std::vector<uint8_t> carry;
-    uint32_t remaining = data_size;
-
-    while (remaining > 0)
-    {
-        const size_t want = std::min<size_t>(remaining, raw.size());
-        const int got = source.read(raw.data(), want);
-        if (got < 0)
-            return false;
-        if (got == 0)
-            break;
-
-        remaining -= static_cast<uint32_t>(got);
-        carry.insert(carry.end(), raw.begin(), raw.begin() + got);
-
-        size_t offset = 0;
-        while (carry.size() - offset >= bytes_per_frame)
-        {
-            int32_t mixed = 0;
-            for (uint16_t ch = 0; ch < channels; ++ch)
-                mixed += wav_sample_to_s16(&carry[offset + ch * bytes_per_sample], bits_per_sample);
-
-            mixed /= channels;
-            mixed = std::max<int32_t>(-32768, std::min<int32_t>(32767, mixed));
-            pcm->push_back(static_cast<int16_t>(mixed));
-            offset += bytes_per_frame;
-        }
-
-        if (offset != 0)
-            carry.erase(carry.begin(), carry.begin() + offset);
-    }
-
-    return pcm->size() == frame_count;
-}
 }
 
 audioDevice::audioDevice()
@@ -401,140 +309,12 @@ void audioDevice::clear_error()
 
 bool audioDevice::submit_test_tone()
 {
-    AudioFormat format;
-    format.sample_rate = 22050;
-    format.channels = 1;
-    format.bits_per_sample = 16;
-
-    AudioTestTone tone(format);
-    std::vector<int16_t> pcm(AUDIO_TEST_TONE_FRAMES);
-    tone.generate(pcm.data(), pcm.size());
-    return _service.submit_pcm(AudioSourceKind::TEST_TONE, format, pcm.data(), pcm.size());
+    return _service.play_test_tone();
 }
 
 bool audioDevice::submit_sd_wav()
 {
-    AudioSourceSD source;
-    if (!source.open(_source))
-    {
-        set_error(AudioError::SOURCE_NOT_FOUND);
-        return false;
-    }
-
-    uint8_t riff[12] = {};
-    if (!read_exact(source, riff, sizeof(riff)) ||
-        std::memcmp(&riff[0], "RIFF", 4) != 0 ||
-        std::memcmp(&riff[8], "WAVE", 4) != 0)
-    {
-        set_error(AudioError::UNSUPPORTED_FORMAT);
-        return false;
-    }
-
-    bool have_fmt = false;
-    bool have_data = false;
-    uint16_t audio_format = 0;
-    uint16_t channels = 0;
-    uint32_t sample_rate = 0;
-    uint16_t bits_per_sample = 0;
-    uint32_t data_offset = 0;
-    uint32_t data_size = 0;
-
-    while (true)
-    {
-        uint8_t chunk_header[8] = {};
-        if (!read_exact(source, chunk_header, sizeof(chunk_header)))
-            break;
-
-        const uint32_t chunk_size = read_le32(&chunk_header[4]);
-
-        if (std::memcmp(chunk_header, "fmt ", 4) == 0)
-        {
-            if (chunk_size < 16)
-            {
-                set_error(AudioError::UNSUPPORTED_FORMAT);
-                return false;
-            }
-
-            std::vector<uint8_t> fmt(chunk_size);
-            if (!read_exact(source, fmt.data(), fmt.size()))
-            {
-                set_error(AudioError::SOURCE_READ_FAILURE);
-                return false;
-            }
-
-            audio_format = read_le16(&fmt[0]);
-            channels = read_le16(&fmt[2]);
-            sample_rate = read_le32(&fmt[4]);
-            bits_per_sample = read_le16(&fmt[14]);
-            have_fmt = true;
-        }
-        else if (std::memcmp(chunk_header, "data", 4) == 0)
-        {
-            data_offset = source.position();
-            data_size = chunk_size;
-            have_data = true;
-            break;
-        }
-        else
-        {
-            const uint32_t skip = chunk_size + (chunk_size & 1);
-            if (!source.seek(source.position() + skip))
-            {
-                set_error(AudioError::SOURCE_READ_FAILURE);
-                return false;
-            }
-        }
-
-        if ((chunk_size & 1) != 0 && std::memcmp(chunk_header, "fmt ", 4) == 0)
-        {
-            uint8_t pad = 0;
-            if (!read_exact(source, &pad, 1))
-            {
-                set_error(AudioError::SOURCE_READ_FAILURE);
-                return false;
-            }
-        }
-    }
-
-    if (!have_fmt || !have_data || audio_format != 1 || sample_rate == 0 ||
-        (channels != 1 && channels != 2) ||
-        (bits_per_sample != 8 && bits_per_sample != 16))
-    {
-        set_error(AudioError::UNSUPPORTED_FORMAT);
-        return false;
-    }
-
-    AudioFormat format;
-    format.sample_rate = sample_rate;
-    format.channels = 1;
-    format.bits_per_sample = 16;
-
-    std::vector<int16_t> pcm;
-    if (!source.seek(data_offset))
-    {
-        set_error(AudioError::SOURCE_READ_FAILURE);
-        return false;
-    }
-
-    if (!append_wav_pcm(source, data_size, channels, bits_per_sample, &pcm))
-    {
-        set_error(AudioError::SOURCE_READ_FAILURE);
-        return false;
-    }
-
-    if (pcm.empty())
-    {
-        set_error(AudioError::UNSUPPORTED_FORMAT);
-        return false;
-    }
-
-    if (!_service.submit_pcm(AudioSourceKind::URI_STREAM, format, pcm.data(), pcm.size(), AudioCodec::WAV))
-    {
-        set_error(AudioError::BUFFER_ALLOCATION_FAILURE);
-        return false;
-    }
-
-    return true;
+    return _service.play_source(_source);
 }
 
 bool audioDevice::is_generated_test_source() const
