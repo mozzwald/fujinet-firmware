@@ -61,6 +61,81 @@
 #include "fnWiFi.h"
 #include "fnLedStrip.h"
 
+#if defined(ESP_PLATFORM) && defined(BUILD_ATARI) && ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+namespace
+{
+adc_oneshot_unit_handle_t sio_adc_handle = nullptr;
+adc_cali_handle_t sio_adc_cali_handle = nullptr;
+bool sio_adc_ready = false;
+bool sio_adc_failed = false;
+
+bool init_sio_adc()
+{
+    if (sio_adc_ready)
+        return true;
+    if (sio_adc_failed)
+        return false;
+
+    adc_oneshot_unit_init_cfg_t init_config {};
+    init_config.unit_id = ADC_UNIT_1;
+    init_config.ulp_mode = ADC_ULP_MODE_DISABLE;
+
+    esp_err_t err = adc_oneshot_new_unit(&init_config, &sio_adc_handle);
+    if (err != ESP_OK)
+    {
+        Debug_printf("SIO ADC init failed: %s\r\n", esp_err_to_name(err));
+        sio_adc_failed = true;
+        return false;
+    }
+
+    adc_oneshot_chan_cfg_t config = {
+         .atten = ADC_ATTEN_11db,
+         .bitwidth = ADC_WIDTH_12Bit,
+    };
+
+    err = adc_oneshot_config_channel(sio_adc_handle, ADC_CHANNEL_7, &config);
+    if (err != ESP_OK)
+    {
+        Debug_printf("SIO ADC channel config failed: %s\r\n", esp_err_to_name(err));
+        adc_oneshot_del_unit(sio_adc_handle);
+        sio_adc_handle = nullptr;
+        sio_adc_failed = true;
+        return false;
+    }
+
+#if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
+    adc_cali_curve_fitting_config_t cali_config = {
+         .unit_id = ADC_UNIT_1,
+         .atten = ADC_ATTEN_11db,
+         .bitwidth = ADC_WIDTH_12Bit,
+    };
+    err = adc_cali_create_scheme_curve_fitting(&cali_config, &sio_adc_cali_handle);
+#elif ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
+    adc_cali_line_fitting_config_t cali_config {};
+    cali_config.unit_id = ADC_UNIT_1;
+    cali_config.atten = ADC_ATTEN_11db;
+    cali_config.bitwidth = ADC_WIDTH_12Bit;
+    err = adc_cali_create_scheme_line_fitting(&cali_config, &sio_adc_cali_handle);
+#else
+    err = ESP_ERR_NOT_SUPPORTED;
+#endif
+
+    if (err != ESP_OK)
+    {
+        Debug_printf("SIO ADC calibration init failed: %s\r\n", esp_err_to_name(err));
+        adc_oneshot_del_unit(sio_adc_handle);
+        sio_adc_handle = nullptr;
+        sio_adc_cali_handle = nullptr;
+        sio_adc_failed = true;
+        return false;
+    }
+
+    sio_adc_ready = true;
+    return true;
+}
+}
+#endif
+
 #ifdef BUILD_APPLE
 #define BUS_CLASS IWM
 #endif
@@ -635,39 +710,9 @@ int SystemManager::get_sio_voltage()
         Debug_println("SIO VREF: Default");
     }
 #else
-    adc_oneshot_unit_handle_t adc1_handle;
-    adc_oneshot_unit_init_cfg_t init_config1 {};
-    init_config1.unit_id = ADC_UNIT_1;
-    init_config1.ulp_mode = ADC_ULP_MODE_DISABLE;
-
-    adc_oneshot_chan_cfg_t config = {
-         .atten = ADC_ATTEN_11db,
-         .bitwidth = ADC_WIDTH_12Bit,
-    };
-
-    adc_cali_handle_t adc_cali_handle = nullptr;
-
-    adc_oneshot_new_unit(&init_config1, &adc1_handle);
-    adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_7, &config);
-
-#if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
-    adc_cali_curve_fitting_config_t cali_config = {
-         .unit_id = ADC_UNIT_1,
-         .atten = ADC_ATTEN_11db,
-         .bitwidth = ADC_WIDTH_12Bit,
-    };
-    adc_cali_create_scheme_curve_fitting(&cali_config, &adc_cali_handle);
+    if (!init_sio_adc())
+        return 0;
 #endif
-
-#if ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
-    adc_cali_line_fitting_config_t cali_config {};
-    cali_config.unit_id = ADC_UNIT_1;
-    cali_config.atten = ADC_ATTEN_11db;
-    cali_config.bitwidth = ADC_WIDTH_12Bit;
-    adc_cali_create_scheme_line_fitting(&cali_config, &adc_cali_handle);
-#endif
-
-#endif      // ESP_IDF_VERSION
 
     int samples = 10;
     uint32_t avgV = 0;
@@ -683,15 +728,12 @@ int SystemManager::get_sio_voltage()
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
         esp_adc_cal_get_voltage(ADC_CHANNEL_7, &adc_chars, &vcc);
 #else
-        adc_oneshot_read(adc1_handle, ADC_CHANNEL_7, &vcc_raw);
-        adc_cali_raw_to_voltage(adc_cali_handle, vcc_raw, &vcc);
+        if (adc_oneshot_read(sio_adc_handle, ADC_CHANNEL_7, &vcc_raw) != ESP_OK ||
+            adc_cali_raw_to_voltage(sio_adc_cali_handle, vcc_raw, &vcc) != ESP_OK)
+            return 0;
 #endif
         avgV += vcc;
     }
-
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-    adc_oneshot_del_unit(adc1_handle);
-#endif
 
     avgV /= samples;
 
@@ -1087,6 +1129,10 @@ void SystemManager::check_hardware_ver()
         _hardware_version = 1;
         safe_reset_gpio = GPIO_NUM_NC;
     }
+
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+    (void)get_sio_voltage();
+#endif
 
 #elif defined(BUILD_ADAM)
     /*  Coleco ADAM
