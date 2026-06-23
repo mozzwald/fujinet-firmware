@@ -1,10 +1,24 @@
 #include "AudioSourceSD.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cctype>
 #include <cstring>
 
 #include "../FileSystem/fnFsSD.h"
+
+#ifdef ESP_PLATFORM
+#include <esp_heap_caps.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+#include "debug.h"
+
+namespace
+{
+constexpr size_t SD_DMA_READ_BUFFER_BYTES = 512;
+}
+#endif
 
 AudioSourceSD::~AudioSourceSD()
 {
@@ -21,12 +35,36 @@ bool AudioSourceSD::open(const std::string &uri)
     if (!fnSDFAT.running())
         return false;
 
+#ifdef ESP_PLATFORM
+    const std::string full_path = std::string(fnSDFAT.basepath()) + _path;
+    _fd = ::open(full_path.c_str(), O_RDONLY);
+    Debug_printf("open = %s rb : %s\r\n", _path.c_str(), _fd >= 0 ? "ok" : "error");
+    if (_fd < 0)
+    {
+        _path.clear();
+        return false;
+    }
+    _dma_read_buffer = static_cast<uint8_t *>(heap_caps_malloc(SD_DMA_READ_BUFFER_BYTES,
+                                                              MALLOC_CAP_INTERNAL |
+                                                                  MALLOC_CAP_DMA |
+                                                                  MALLOC_CAP_8BIT));
+    if (_dma_read_buffer == nullptr)
+    {
+        ::close(_fd);
+        _fd = -1;
+        _path.clear();
+        return false;
+    }
+    _dma_read_buffer_size = SD_DMA_READ_BUFFER_BYTES;
+    _position = 0;
+#else
     _file = fnSDFAT.file_open(_path.c_str(), "rb");
     if (_file == nullptr)
     {
         _path.clear();
         return false;
     }
+#endif
 
     const long size = fnSDFAT.filesize(_path.c_str());
     _content_length = size > 0 ? static_cast<uint32_t>(size) : 0;
@@ -42,31 +80,76 @@ bool AudioSourceSD::open(const std::string &uri)
 
 int AudioSourceSD::read(uint8_t *buffer, size_t length)
 {
-    if (_file == nullptr || _cancelled || buffer == nullptr)
+    if (_cancelled || buffer == nullptr)
         return -1;
 
     if (length == 0)
         return 0;
+
+#ifdef ESP_PLATFORM
+    if (_fd < 0 || _dma_read_buffer == nullptr || _dma_read_buffer_size == 0)
+        return -1;
+
+    size_t total_read = 0;
+    while (total_read < length)
+    {
+        const size_t chunk = std::min(length - total_read, _dma_read_buffer_size);
+        const ssize_t bytes_read = ::read(_fd, _dma_read_buffer, chunk);
+        if (bytes_read < 0)
+        {
+            Debug_printf("audio sd read failed errno=%d\r\n", errno);
+            return total_read == 0 ? -1 : static_cast<int>(total_read);
+        }
+        if (bytes_read == 0)
+            break;
+
+        std::memcpy(buffer + total_read, _dma_read_buffer, bytes_read);
+        total_read += static_cast<size_t>(bytes_read);
+        _position += static_cast<uint32_t>(bytes_read);
+
+        if (static_cast<size_t>(bytes_read) < chunk)
+            break;
+    }
+
+    return static_cast<int>(total_read);
+#else
+    if (_file == nullptr)
+        return -1;
 
     const size_t bytes_read = std::fread(buffer, 1, length, _file);
     if (bytes_read == 0 && std::ferror(_file))
         return -1;
 
     return static_cast<int>(bytes_read);
+#endif
 }
 
 void AudioSourceSD::close()
 {
+#ifdef ESP_PLATFORM
+    if (_fd >= 0)
+    {
+        ::close(_fd);
+        _fd = -1;
+    }
+    _position = 0;
+#else
     if (_file != nullptr)
     {
         std::fclose(_file);
         _file = nullptr;
     }
+#endif
 
     _path.clear();
     _content_type.clear();
     _content_length = 0;
     _cancelled = false;
+#ifdef ESP_PLATFORM
+    heap_caps_free(_dma_read_buffer);
+    _dma_read_buffer = nullptr;
+    _dma_read_buffer_size = 0;
+#endif
 }
 
 void AudioSourceSD::cancel()
@@ -76,15 +159,31 @@ void AudioSourceSD::cancel()
 
 bool AudioSourceSD::is_seekable() const
 {
+#ifdef ESP_PLATFORM
+    return _fd >= 0;
+#else
     return _file != nullptr;
+#endif
 }
 
 bool AudioSourceSD::seek(uint32_t position)
 {
+#ifdef ESP_PLATFORM
+    if (_fd < 0)
+        return false;
+
+    const off_t result = ::lseek(_fd, static_cast<off_t>(position), SEEK_SET);
+    if (result < 0)
+        return false;
+
+    _position = static_cast<uint32_t>(result);
+    return true;
+#else
     if (_file == nullptr)
         return false;
 
     return std::fseek(_file, static_cast<long>(position), SEEK_SET) == 0;
+#endif
 }
 
 std::string AudioSourceSD::content_type() const
@@ -109,11 +208,15 @@ std::string AudioSourceSD::metadata(const std::string &field) const
 
 uint32_t AudioSourceSD::position() const
 {
+#ifdef ESP_PLATFORM
+    return _position;
+#else
     if (_file == nullptr)
         return 0;
 
     const long pos = std::ftell(_file);
     return pos > 0 ? static_cast<uint32_t>(pos) : 0;
+#endif
 }
 
 bool AudioSourceSD::normalize_uri(const std::string &uri, std::string *path)

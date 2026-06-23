@@ -1095,8 +1095,8 @@ Atari bus as dedicated device `$65` / `A:`.
       SIO calls. Initial app: `atari-audio-test/`, built with cc65 as
       `build/fnaudio-test.xex`.
 - [x] Verify the existing P3:/SAM printer-interface device remains compatible.
-      SAM still uses its existing direct output path and has not yet been
-      migrated through `AudioService`; that remains Phase 9 work.
+      Atari SAM now queues generated PCM through `AudioService`; manual P3:
+      speech regression remains listed in Phase 9.
 
 Implementation notes:
 
@@ -1156,13 +1156,14 @@ Goal: support the most common file and internet-radio format.
       miniaudio/dr_mp3 frame decoder still allocates internal decode scratch on
       the caller stack, so the worker stack is provisionally set back to 32768
       bytes and still needs high-water-mark measurement.
-Initial successful playback showed repeat-like skipping consistent with
-DAC starvation. A 16-descriptor queue with 2048-byte DMA buffers failed
-to allocate at DAC open on real ESP32 hardware. A smaller 12-descriptor
-queue with 1024-byte DMA buffers opened, but SDMMC later failed to allocate
-DMA-capable transfer memory during playback. The DAC queue is therefore
-restored to the original 8 descriptors of 1024 bytes so SDMMC retains
-internal DMA-capable heap. MP3 decode blocks remain at 2048 frames.
+      Initial successful playback showed repeat-like skipping consistent with
+      DAC starvation. A 16-descriptor queue with 2048-byte DMA buffers failed
+      to allocate at DAC open on real ESP32 hardware. A smaller 12-descriptor
+      queue with 1024-byte DMA buffers opened, but SDMMC later failed to
+      allocate DMA-capable transfer memory during playback. The DAC queue is
+      therefore restored to the original 8 descriptors of 1024 bytes so SDMMC
+      retains internal DMA-capable heap. MP3 decode blocks remain at 2048
+      frames.
 - [x] Add a PCM ring-buffer queue between decoders and sinks for compressed
       streams.
       Implementation constraints:
@@ -1192,11 +1193,25 @@ internal DMA-capable heap. MP3 decode blocks remain at 2048 frames.
       internal heap for a second FreeRTOS task on classic ESP32, so that path is
       disabled for now. Re-enable it only after decoder stack use is reduced or
       an alternate stack allocation strategy is proven on hardware.
+- [ ] Remove or formally retire the disabled ESP32 `audioOut` prototype
+      (`MP3_USE_OUTPUT_TASK`) once the single-worker MP3 path has survived
+      broader testing, or replace it with a proven low-stack/alternate-stack
+      producer-consumer implementation.
       With the output task disabled, real-hardware testing showed each audible
       skip coincided with a large miniaudio source read. The ESP32 MP3 read
       callback now bounds each SD read to 2048 bytes while still reporting the
       decoder's requested size in debug output. This resolved the repeated skip
       on real Atari/FujiNet hardware.
+      Later SAM/rotation-sound testing exposed a related SDMMC constraint:
+      passing miniaudio's destination buffer through stdio `fread()` can make
+      the ESP32 SDMMC layer allocate a late DMA bounce buffer or use an
+      internal stdio buffer that is not suitable for SDMMC DMA. When internal
+      heap is already tight, that allocation fails with
+      `esp_dma_capable_malloc` / `sdmmc_read_blocks failed`. On ESP32,
+      `AudioSourceSD` therefore opens the SD file through the VFS file
+      descriptor API and reads through one 512-byte internal DMA-capable bounce
+      buffer, then copies into the decoder's destination. Do not switch this
+      path back to stdio without retesting MP3 playback on real hardware.
       Hardware testing also confirmed that MP3 playback continues while the
       Atari resets and reloads the test XEX, while the WebUI mounts a different
       disk, and while the newly booted Atari program connects to a network TCP
@@ -1325,35 +1340,64 @@ Exit criteria:
 Goal: eliminate competing implementations that directly own the audio pin and
 make SAM the first real generated-audio producer for `AudioService`.
 
-- [ ] Refactor SAM so speech generation can emit PCM without directly opening
+This is the next implementation target after the initial ESP32 SD-card MP3
+playback milestone. HTTP streaming, AAC, HLS, and broad FujiNet-PC MP3 testing
+remain deferred while SAM is migrated onto the shared audio path.
+
+- [x] Refactor SAM so speech generation can emit PCM without directly opening
       an output device.
-- [ ] Add a SAM PCM source or enqueue generated SAM PCM into `AudioService`.
+- [x] Add a SAM PCM source or enqueue generated SAM PCM into `AudioService`.
 - [ ] Separate SAM synthesis from `OutputSound()` so generated samples can be
       handed to `AudioService` without blocking the SIO voice-device command
       path.
-- [ ] Replace or wrap SAM's current global generated-sample buffer lifecycle
+- [x] Replace or wrap SAM's current global generated-sample buffer lifecycle
       with an owned PCM buffer or producer object that can be queued, cancelled,
       and freed deterministically.
-- [ ] Normalize SAM's current 8-bit generated samples into the signed 16-bit PCM
+- [x] Normalize SAM's current 8-bit generated samples into the signed 16-bit PCM
       format expected by `AudioService`, or document an explicit conversion path
       in the SAM producer.
-- [ ] Use SAM as the reference implementation for future generated-audio
+- [x] Use SAM as the reference implementation for future generated-audio
       devices that push PCM into `AudioService`.
-- [ ] Preserve existing P3: command behavior.
-- [ ] Preserve SAM parameter and preset behavior.
-- [ ] Route rotation sounds through the shared audio service if appropriate.
-- [ ] Define arbitration behavior when SAM is requested during music playback.
-- [ ] Implement the initial SAM/music behavior using the Phase 1 arbitration
+- [x] Queue appended SAM PCM chunks so printer-split utterances are played in
+      order instead of each chunk cancelling the previous chunk.
+- [x] Preserve existing P3: command behavior.
+- [x] Preserve SAM parameter and preset behavior.
+- [x] Route rotation sounds through the shared audio service if appropriate.
+- [x] Define arbitration behavior when SAM is requested during music playback.
+- [x] Implement the initial SAM/music behavior using the Phase 1 arbitration
       rules if the mixer is not ready.
 - [ ] Define the future mixed behavior where SAM speech overlays active music or
       radio playback instead of requiring direct sink access.
-- [ ] Ensure only one component owns DAC/I2S/miniaudio output resources.
+- [x] Ensure only one component owns DAC/I2S/miniaudio output resources.
 - [ ] Remove the classic ESP32 per-sample one-shot DAC output loop.
 - [ ] Remove duplicated S3 sink initialization from SAM.
 - [ ] Remove duplicated FujiNet-PC miniaudio output setup from SAM.
 - [ ] Add a test or manual scenario for disk-swap speech during active stream
       playback.
 - [ ] Add regression tests for P3: speech.
+
+Implementation note:
+
+Atari SAM now hands each generated 8-bit sample buffer to `audioDev`, which
+copies and converts it into owned signed 16-bit mono PCM before queueing a
+`PLAY_PCM` command on `AudioService`. SAM uses the generated-PCM append path:
+the first SAM chunk interrupts any active non-SAM source using the current Phase
+1 generation/cancel behavior, while later SAM chunks for the same utterance
+reuse the active SAM generation and remain FIFO queued instead of cancelling the
+chunk currently playing. `AudioService` then opens the active `AudioSink` and
+drains each PCM chunk in the same worker path used by other audio commands. This
+keeps Atari SAM from directly owning DAC/I2S/miniaudio output. True overlay
+mixing remains a future mixer task. SAM synthesis itself still runs
+synchronously before each PCM chunk is queued, so the remaining blocking item
+above is about moving generation off the SIO command path, not about playback
+duration. Legacy SAM direct-output code is still present for non-Atari paths and
+should be removed or wrapped once those targets are migrated.
+
+Disk rotation announcements now use the same path. Generic `fujiDevice`
+rotation logic calls a platform hook after rotating IDs and locating the slot
+now assigned to D1:. Atari SIO overrides that hook and speaks "disk N" with the
+existing SAM phonetic helpers, so the generated PCM enters `AudioService`
+through the SAM append queue instead of writing directly to DAC/I2S/miniaudio.
 
 Exit criteria:
 

@@ -15,6 +15,10 @@
   #include "compat_string.h"
 #endif
 
+#ifdef BUILD_ATARI
+#include "../device/sio/audio.h"
+#endif
+
 #include "fnSystem.h"
 
 #ifdef __cplusplus
@@ -24,6 +28,20 @@ extern char *buffer;
 
 int debug = 0;
 const uint32_t sample_rate = 22050;//110000l;
+
+#ifdef BUILD_ATARI
+static bool OutputSamViaAudioService()
+{
+    const int sample_count = GetBufferLength() / 50;
+    char *sam_buffer = GetBuffer();
+    if (sam_buffer == nullptr || sample_count <= 0)
+        return false;
+
+    return audioDev.play_sam_pcm(reinterpret_cast<const uint8_t *>(sam_buffer),
+                                 static_cast<size_t>(sample_count),
+                                 sample_rate);
+}
+#endif
 
 
 #ifdef CONFIG_IDF_TARGET_ESP32S3
@@ -219,6 +237,10 @@ void OutputSound()
 #ifdef ESP_PLATFORM
 void OutputSound()
 {
+#ifdef BUILD_ATARI
+    OutputSamViaAudioService();
+    return;
+#endif
 #ifndef CONFIG_IDF_TARGET_ESP32S3
     int n = GetBufferLength() / 50;
     char *s = GetBuffer();
@@ -386,6 +408,10 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
 
 void OutputSound()
 {
+#ifdef BUILD_ATARI
+    OutputSamViaAudioService();
+    return;
+#endif
     pos = 0;
     bool done = false;
     ma_device_config config  = ma_device_config_init(ma_device_type_playback);

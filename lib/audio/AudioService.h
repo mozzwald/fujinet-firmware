@@ -37,6 +37,18 @@ public:
 
     bool play_source(const std::string &source);
     bool play_test_tone();
+    bool play_pcm(const int16_t *frames,
+                  size_t frame_count,
+                  const AudioFormat &format,
+                  AudioSourceKind source_kind = AudioSourceKind::GENERATED_PCM);
+    bool play_u8_pcm(const uint8_t *frames,
+                     size_t frame_count,
+                     uint32_t sample_rate,
+                     AudioSourceKind source_kind = AudioSourceKind::GENERATED_PCM);
+    bool append_u8_pcm(const uint8_t *frames,
+                       size_t frame_count,
+                       uint32_t sample_rate,
+                       AudioSourceKind source_kind = AudioSourceKind::GENERATED_PCM);
     bool process_pending();
     void stop();
     void pause();
@@ -46,9 +58,20 @@ public:
 
 private:
     bool enqueue(const AudioCommand &command);
+    bool enqueue_pcm_command(const int16_t *frames,
+                             size_t frame_count,
+                             const AudioFormat &format,
+                             AudioSourceKind source_kind,
+                             bool append_to_current);
+    bool enqueue_u8_pcm_command(const uint8_t *frames,
+                                size_t frame_count,
+                                uint32_t sample_rate,
+                                AudioSourceKind source_kind,
+                                bool append_to_current);
     void process_command(const AudioCommand &command);
     void process_source(const AudioCommand &command);
     void process_test_tone(const AudioCommand &command);
+    void process_pcm(const AudioCommand &command);
     bool write_frames(const int16_t *frames, size_t frame_count, uint32_t generation);
     bool process_seek(AudioSource &source,
                       AudioDecoderWav &decoder,

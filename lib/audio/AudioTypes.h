@@ -65,6 +65,7 @@ enum class AudioCommandKind : uint8_t
     NONE = 0,
     PLAY_SOURCE,
     PLAY_TEST_TONE,
+    PLAY_PCM,
 };
 
 struct AudioFormat

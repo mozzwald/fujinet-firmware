@@ -61,7 +61,8 @@
 #include "fnWiFi.h"
 #include "fnLedStrip.h"
 
-#if defined(ESP_PLATFORM) && defined(BUILD_ATARI) && ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+#if defined(ESP_PLATFORM) && defined(BUILD_ATARI)
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
 namespace
 {
 adc_oneshot_unit_handle_t sio_adc_handle = nullptr;
@@ -134,6 +135,7 @@ bool init_sio_adc()
     return true;
 }
 }
+#endif
 #endif
 
 #ifdef BUILD_APPLE

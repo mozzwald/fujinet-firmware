@@ -279,6 +279,12 @@ void audioDevice::audiocmd_seek()
     transaction_complete();
 }
 
+bool audioDevice::play_sam_pcm(const uint8_t *frames, size_t frame_count, uint32_t sample_rate)
+{
+    clear_error();
+    return _service.append_u8_pcm(frames, frame_count, sample_rate, AudioSourceKind::SAM);
+}
+
 void audioDevice::put_basic_status()
 {
     AudioStatusSnapshot status = _service.status();

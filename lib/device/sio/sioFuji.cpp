@@ -110,6 +110,12 @@ void say_swap_label()
     util_sam_say("DIHSK7Q ", true);
 }
 
+void sioFuji::announce_image_rotate(uint8_t slot)
+{
+    say_swap_label();
+    say_number(slot);
+}
+
 // Constructor
 sioFuji::sioFuji() : fujiDevice(MAX_DISK_DEVICES, IMAGE_EXTENSION, LOBBY_URL)
 {

@@ -202,6 +202,11 @@ void fujiDevice::shutdown()
         _fnDisks[i].disk_dev.unmount();
 }
 
+void fujiDevice::announce_image_rotate(uint8_t slot)
+{
+    (void)slot;
+}
+
 // Disk Image Rotate
 /*
   We rotate disks my changing their disk device ID's. That prevents
@@ -235,22 +240,17 @@ void fujiDevice::fujicmd_image_rotate()
         // The first slot gets the device ID of the last slot
         SYSTEM_BUS.changeDeviceId(get_disk_dev(0), last_id);
 
-#if ENABLE_SPEECH
-        // FIXME - make this work
-
-        // Say whatever disk is in D1:
         if (Config.get_general_rotation_sounds())
         {
             for (int i = 0; i <= count; i++)
             {
-                if (_fnDisks[i].disk_dev.id() == 0x31)
+                if (_fnDisks[i].disk_dev.id() == FUJI_DEVICEID_DISK)
                 {
-                    say_swap_label();
-                    say_number(i + 1); // because i starts from 0
+                    announce_image_rotate(i + 1); // because i starts from 0
+                    break;
                 }
             }
         }
-#endif /* ENABLE_SPEECH */
     }
 }
 

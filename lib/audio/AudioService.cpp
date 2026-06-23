@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <new>
@@ -39,6 +40,33 @@ constexpr UBaseType_t MP3_OUTPUT_PLAY_PRIORITY = 6;
 #define MP3_USE_OUTPUT_TASK 0
 #endif
 
+static void free_pcm_buffer(int16_t *buffer)
+{
+#ifdef ESP_PLATFORM
+    heap_caps_free(buffer);
+#else
+    std::free(buffer);
+#endif
+}
+
+static int16_t *allocate_pcm_buffer(size_t frame_count)
+{
+    if (frame_count == 0)
+        return nullptr;
+
+    const size_t bytes = frame_count * sizeof(int16_t);
+#ifdef ESP_PLATFORM
+#if CONFIG_SPIRAM
+    int16_t *buffer = static_cast<int16_t *>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (buffer != nullptr)
+        return buffer;
+#endif
+    return static_cast<int16_t *>(heap_caps_malloc(bytes, MALLOC_CAP_DEFAULT));
+#else
+    return static_cast<int16_t *>(std::malloc(bytes));
+#endif
+}
+
 bool source_is_mp3(const AudioSource &source)
 {
     const std::string content_type = source.content_type();
@@ -58,7 +86,7 @@ bool source_is_mp3(const AudioSource &source)
 }
 
 AudioService::AudioService()
-    : _commands(1)
+    : _commands(8)
 {
     _status.volume = 100;
 
@@ -173,11 +201,20 @@ bool AudioService::play_source(const std::string &source)
         return false;
     }
 
+    std::shared_ptr<char> source_buffer(new (std::nothrow) char[AudioCommand::MAX_SOURCE_LENGTH + 1],
+                                        std::default_delete<char[]>());
+    if (!source_buffer)
+    {
+        set_error(AudioError::BUFFER_ALLOCATION_FAILURE);
+        return false;
+    }
+
     AudioCommand command;
     command.kind = AudioCommandKind::PLAY_SOURCE;
     command.source_length = static_cast<uint16_t>(source.size());
-    std::memcpy(command.source.data(), source.data(), source.size());
-    command.source[source.size()] = '\0';
+    command.source = source_buffer;
+    std::memcpy(command.source.get(), source.data(), source.size());
+    command.source.get()[source.size()] = '\0';
     command.generation = ++_generation;
     _pause_requested = false;
     _seek_pending = false;
@@ -189,6 +226,135 @@ bool AudioService::play_test_tone()
     AudioCommand command;
     command.kind = AudioCommandKind::PLAY_TEST_TONE;
     command.generation = ++_generation;
+    _pause_requested = false;
+    _seek_pending = false;
+    return enqueue(command);
+}
+
+bool AudioService::play_pcm(const int16_t *frames,
+                            size_t frame_count,
+                            const AudioFormat &format,
+                            AudioSourceKind source_kind)
+{
+    return enqueue_pcm_command(frames, frame_count, format, source_kind, false);
+}
+
+bool AudioService::enqueue_pcm_command(const int16_t *frames,
+                                       size_t frame_count,
+                                       const AudioFormat &format,
+                                       AudioSourceKind source_kind,
+                                       bool append_to_current)
+{
+    if (frames == nullptr || frame_count == 0 || format.sample_rate == 0 ||
+        format.channels != 1 || format.bits_per_sample != 16)
+    {
+        set_error(AudioError::INVALID_ARGUMENT);
+        return false;
+    }
+
+    int16_t *pcm_buffer = allocate_pcm_buffer(frame_count);
+    if (pcm_buffer == nullptr)
+    {
+        set_error(AudioError::BUFFER_ALLOCATION_FAILURE);
+        return false;
+    }
+    std::memcpy(pcm_buffer, frames, frame_count * sizeof(int16_t));
+    std::shared_ptr<int16_t> pcm(pcm_buffer, free_pcm_buffer);
+
+    AudioCommand command;
+    command.kind = AudioCommandKind::PLAY_PCM;
+    command.pcm = pcm;
+    command.pcm_frame_count = frame_count;
+    command.format = format;
+    command.source_kind = source_kind;
+    command.append_to_current = append_to_current;
+    if (append_to_current)
+    {
+        const AudioStatusSnapshot snapshot = status();
+        const bool same_active_source =
+            snapshot.source_kind == source_kind &&
+            (snapshot.state == AudioState::OPENING ||
+             snapshot.state == AudioState::BUFFERING ||
+             snapshot.state == AudioState::PLAYING ||
+             snapshot.state == AudioState::PAUSED);
+        command.generation = same_active_source ? _generation.load() : ++_generation;
+    }
+    else
+    {
+        command.generation = ++_generation;
+    }
+    _pause_requested = false;
+    _seek_pending = false;
+    return enqueue(command);
+}
+
+bool AudioService::play_u8_pcm(const uint8_t *frames,
+                               size_t frame_count,
+                               uint32_t sample_rate,
+                               AudioSourceKind source_kind)
+{
+    return enqueue_u8_pcm_command(frames, frame_count, sample_rate, source_kind, false);
+}
+
+bool AudioService::append_u8_pcm(const uint8_t *frames,
+                                 size_t frame_count,
+                                 uint32_t sample_rate,
+                                 AudioSourceKind source_kind)
+{
+    return enqueue_u8_pcm_command(frames, frame_count, sample_rate, source_kind, true);
+}
+
+bool AudioService::enqueue_u8_pcm_command(const uint8_t *frames,
+                                          size_t frame_count,
+                                          uint32_t sample_rate,
+                                          AudioSourceKind source_kind,
+                                          bool append_to_current)
+{
+    if (frames == nullptr || frame_count == 0 || sample_rate == 0)
+    {
+        set_error(AudioError::INVALID_ARGUMENT);
+        return false;
+    }
+
+    int16_t *pcm_buffer = allocate_pcm_buffer(frame_count);
+    if (pcm_buffer == nullptr)
+    {
+        set_error(AudioError::BUFFER_ALLOCATION_FAILURE);
+        return false;
+    }
+
+    for (size_t i = 0; i < frame_count; ++i)
+        pcm_buffer[i] = static_cast<int16_t>((static_cast<int32_t>(frames[i]) - 128) << 8);
+
+    std::shared_ptr<int16_t> pcm(pcm_buffer, free_pcm_buffer);
+
+    AudioFormat format;
+    format.sample_rate = sample_rate;
+    format.channels = 1;
+    format.bits_per_sample = 16;
+
+    AudioCommand command;
+    command.kind = AudioCommandKind::PLAY_PCM;
+    command.pcm = pcm;
+    command.pcm_frame_count = frame_count;
+    command.format = format;
+    command.source_kind = source_kind;
+    command.append_to_current = append_to_current;
+    if (append_to_current)
+    {
+        const AudioStatusSnapshot snapshot = status();
+        const bool same_active_source =
+            snapshot.source_kind == source_kind &&
+            (snapshot.state == AudioState::OPENING ||
+             snapshot.state == AudioState::BUFFERING ||
+             snapshot.state == AudioState::PLAYING ||
+             snapshot.state == AudioState::PAUSED);
+        command.generation = same_active_source ? _generation.load() : ++_generation;
+    }
+    else
+    {
+        command.generation = ++_generation;
+    }
     _pause_requested = false;
     _seek_pending = false;
     return enqueue(command);
@@ -329,9 +495,9 @@ bool AudioService::enqueue(const AudioCommand &command)
     lock_queue();
 #endif
 
-    // Only play requests are queued. A newer request supersedes an older
-    // pending request whose generation has already been invalidated.
-    if (_commands.full())
+    // Interrupting commands supersede pending work. Appended PCM commands are
+    // ordered chunks of the same generated source and must remain FIFO.
+    if (!command.append_to_current)
         _commands.clear();
 
     if (!_commands.push(command))
@@ -364,11 +530,22 @@ bool AudioService::enqueue(const AudioCommand &command)
         lock_status();
 #endif
         _counters.commands_queued++;
-        _status.state = AudioState::OPENING;
         _status.error = AudioError::NONE;
-        _status.position_ms = 0;
-        _status.duration_ms = 0;
-        _status.buffered_ms = 0;
+        if (!command.append_to_current ||
+            (_status.source_kind != command.source_kind ||
+             (_status.state != AudioState::OPENING &&
+              _status.state != AudioState::BUFFERING &&
+              _status.state != AudioState::PLAYING &&
+              _status.state != AudioState::PAUSED)))
+        {
+            _status.state = AudioState::OPENING;
+            _status.source_kind = command.source_kind;
+            _status.codec = command.kind == AudioCommandKind::PLAY_PCM ? AudioCodec::PCM : AudioCodec::UNKNOWN;
+            _status.format = command.format;
+            _status.position_ms = 0;
+            _status.duration_ms = 0;
+            _status.buffered_ms = 0;
+        }
 #ifdef ESP_PLATFORM
         unlock_status();
 #endif
@@ -393,6 +570,9 @@ void AudioService::process_command(const AudioCommand &command)
     case AudioCommandKind::PLAY_TEST_TONE:
         process_test_tone(command);
         break;
+    case AudioCommandKind::PLAY_PCM:
+        process_pcm(command);
+        break;
     case AudioCommandKind::NONE:
         break;
     }
@@ -406,7 +586,13 @@ void AudioService::process_source(const AudioCommand &command)
         return;
     }
 
-    const std::string source_uri(command.source.data(), command.source_length);
+    if (!command.source || command.source_length == 0)
+    {
+        set_error(AudioError::INVALID_ARGUMENT);
+        return;
+    }
+
+    const std::string source_uri(command.source.get(), command.source_length);
     if (source_uri.rfind("sd:", 0) != 0)
     {
         set_error(AudioError::UNSUPPORTED_URI_SCHEME);
@@ -977,6 +1163,62 @@ void AudioService::process_test_tone(const AudioCommand &command)
             break;
         update_progress(static_cast<uint32_t>(frames * sizeof(int16_t)), frames);
         remaining -= static_cast<uint32_t>(frames);
+    }
+
+    if (cancelled(command.generation))
+    {
+        _sink->close();
+        finish_cancelled(command.generation);
+        return;
+    }
+    if (status().state == AudioState::ERROR)
+    {
+        _sink->close();
+        return;
+    }
+
+    _sink->drain();
+    _sink->close();
+    set_state(AudioState::FINISHED);
+}
+
+void AudioService::process_pcm(const AudioCommand &command)
+{
+    if (_sink == nullptr || !_sink->supported())
+    {
+        set_error(AudioError::UNSUPPORTED_HARDWARE);
+        return;
+    }
+
+    if (!command.pcm || command.pcm_frame_count == 0 || command.format.sample_rate == 0 ||
+        command.format.channels != 1 || command.format.bits_per_sample != 16)
+    {
+        set_error(AudioError::INVALID_ARGUMENT);
+        return;
+    }
+
+    const uint32_t duration_ms = static_cast<uint32_t>(
+        (static_cast<uint64_t>(command.pcm_frame_count) * 1000) / command.format.sample_rate);
+    set_stream_status(command.source_kind, AudioCodec::PCM, command.format, duration_ms);
+
+    if (!_sink->open(command.format))
+    {
+        set_error(AudioError::OUTPUT_INITIALIZATION_FAILURE);
+        return;
+    }
+    _sink->set_volume(_requested_volume.load());
+    set_state(AudioState::PLAYING);
+
+    constexpr size_t PCM_CHUNK_FRAMES = 512;
+    size_t offset = 0;
+    while (offset < command.pcm_frame_count && wait_if_paused(command.generation))
+    {
+        const size_t frames = std::min(PCM_CHUNK_FRAMES, command.pcm_frame_count - offset);
+        _sink->set_volume(_requested_volume.load());
+        if (!write_frames(command.pcm.get() + offset, frames, command.generation))
+            break;
+        update_progress(static_cast<uint32_t>(frames * sizeof(int16_t)), frames);
+        offset += frames;
     }
 
     if (cancelled(command.generation))

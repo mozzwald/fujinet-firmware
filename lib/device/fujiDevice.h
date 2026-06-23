@@ -162,6 +162,7 @@ protected:
     // ============ Validation of inputs ============
     success_is_true validate_host_slot(uint8_t slot, const char *dmsg=nullptr);
     success_is_true validate_device_slot(uint8_t slot, const char *dmsg = nullptr);
+    virtual void announce_image_rotate(uint8_t slot);
 
 public:
     bool boot_config = true;
