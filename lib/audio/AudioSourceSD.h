@@ -22,7 +22,7 @@ public:
     std::string metadata(const std::string &field) const override;
 
     const std::string &path() const { return _path; }
-    uint32_t position() const;
+    uint32_t position() const override;
 
 private:
     static bool normalize_uri(const std::string &uri, std::string *path);

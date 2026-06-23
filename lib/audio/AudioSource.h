@@ -16,6 +16,7 @@ public:
     virtual void cancel() = 0;
     virtual bool is_seekable() const = 0;
     virtual bool seek(uint32_t position) = 0;
+    virtual uint32_t position() const = 0;
     virtual std::string content_type() const = 0;
     virtual uint32_t content_length() const = 0;
     virtual std::string metadata(const std::string &field) const = 0;

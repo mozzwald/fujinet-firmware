@@ -253,12 +253,30 @@ void audioDevice::audiocmd_get_metadata(uint8_t field_id, uint16_t requested_len
     transaction_put(response, sizeof(response));
 }
 
-void audioDevice::audiocmd_seek(uint32_t position_ms)
+void audioDevice::audiocmd_seek()
 {
-    (void)position_ms;
-    transaction_begin(TRANS_STATE::NO_GET);
-    set_error(AudioError::SEEK_UNSUPPORTED);
-    transaction_error();
+    uint8_t payload[4] = {};
+    transaction_begin(TRANS_STATE::WILL_GET);
+    if (!transaction_get(payload, sizeof(payload)))
+    {
+        set_error(AudioError::INVALID_ARGUMENT);
+        transaction_error();
+        return;
+    }
+
+    const uint32_t position_ms = static_cast<uint32_t>(payload[0]) |
+                                 (static_cast<uint32_t>(payload[1]) << 8) |
+                                 (static_cast<uint32_t>(payload[2]) << 16) |
+                                 (static_cast<uint32_t>(payload[3]) << 24);
+    if (!_service.seek(position_ms))
+    {
+        set_error(AudioError::SEEK_UNSUPPORTED);
+        transaction_error();
+        return;
+    }
+
+    clear_error();
+    transaction_complete();
 }
 
 void audioDevice::put_basic_status()

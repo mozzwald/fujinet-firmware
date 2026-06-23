@@ -89,7 +89,7 @@ void sioAudio::sio_process(uint32_t commanddata, uint8_t checksum)
         audiocmd_get_metadata(cmdFrame.aux1, cmdFrame.aux2);
         break;
     case AUDIOCMD_SEEK:
-        audiocmd_seek(0);
+        audiocmd_seek();
         break;
     default:
         sio_nak();

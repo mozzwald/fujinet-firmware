@@ -133,6 +133,7 @@ bool AudioService::play_source(const std::string &source)
     command.source[source.size()] = '\0';
     command.generation = ++_generation;
     _pause_requested = false;
+    _seek_pending = false;
     return enqueue(command);
 }
 
@@ -142,6 +143,7 @@ bool AudioService::play_test_tone()
     command.kind = AudioCommandKind::PLAY_TEST_TONE;
     command.generation = ++_generation;
     _pause_requested = false;
+    _seek_pending = false;
     return enqueue(command);
 }
 
@@ -173,6 +175,7 @@ void AudioService::stop()
 {
     ++_generation;
     _pause_requested = false;
+    _seek_pending = false;
     {
 #ifndef ESP_PLATFORM
         std::lock_guard<std::mutex> lock(_status_lock);
@@ -248,6 +251,27 @@ void AudioService::set_volume(uint8_t percent)
 #ifdef ESP_PLATFORM
     unlock_status();
 #endif
+}
+
+bool AudioService::seek(uint32_t position_ms)
+{
+    const AudioStatusSnapshot snapshot = status();
+    if (snapshot.source_kind != AudioSourceKind::URI_STREAM ||
+        snapshot.codec != AudioCodec::WAV ||
+        (snapshot.state != AudioState::BUFFERING &&
+         snapshot.state != AudioState::PLAYING &&
+         snapshot.state != AudioState::PAUSED))
+    {
+        return false;
+    }
+
+    _seek_position_ms = position_ms;
+    _seek_generation = _generation.load();
+    _seek_pending = true;
+#ifndef ESP_PLATFORM
+    _wake.notify_all();
+#endif
+    return true;
 }
 
 bool AudioService::enqueue(const AudioCommand &command)
@@ -389,9 +413,16 @@ void AudioService::process_source(const AudioCommand &command)
     set_state(AudioState::PLAYING);
 
     std::array<int16_t, 512> pcm = {};
-    while (decoder.frames_remaining() != 0)
+    while (decoder.frames_remaining() != 0 ||
+           (_seek_pending.load() && _seek_generation.load() == command.generation))
     {
+        if (!process_seek(source, decoder, format, command.generation))
+            break;
         if (!wait_if_paused(command.generation))
+            break;
+        if (_seek_pending.load() && _seek_generation.load() == command.generation)
+            continue;
+        if (decoder.frames_remaining() == 0)
             break;
 
         size_t frames_produced = 0;
@@ -532,10 +563,65 @@ bool AudioService::write_frames(const int16_t *frames, size_t frame_count, uint3
     return true;
 }
 
+bool AudioService::process_seek(AudioSource &source,
+                                AudioDecoderWav &decoder,
+                                const AudioFormat &format,
+                                uint32_t generation)
+{
+    if (!_seek_pending.load() || _seek_generation.load() != generation)
+        return true;
+
+    const uint32_t position_ms = _seek_position_ms.load();
+    _seek_pending = false;
+
+    _sink->close();
+    AudioError error = AudioError::NONE;
+    if (!decoder.seek_ms(source, position_ms, &error))
+    {
+        set_error(error);
+        return false;
+    }
+    if (cancelled(generation))
+        return false;
+
+    if (!_sink->open(format))
+    {
+        set_error(AudioError::OUTPUT_INITIALIZATION_FAILURE);
+        return false;
+    }
+    _sink->set_volume(_requested_volume.load());
+
+    const uint32_t actual_position_ms = decoder.position_ms();
+    {
+#ifndef ESP_PLATFORM
+        std::lock_guard<std::mutex> lock(_status_lock);
+#else
+        lock_status();
+#endif
+        _status.position_ms = actual_position_ms;
+        _stream_frames_written = decoder.position_frames();
+#ifdef ESP_PLATFORM
+        unlock_status();
+#endif
+    }
+
+    if (_pause_requested.load())
+    {
+        _sink->pause();
+        set_state(AudioState::PAUSED);
+    }
+    else
+    {
+        set_state(AudioState::PLAYING);
+    }
+    return true;
+}
+
 bool AudioService::wait_if_paused(uint32_t generation)
 {
     bool sink_paused = false;
-    while (_pause_requested.load() && !cancelled(generation))
+    while (_pause_requested.load() && !cancelled(generation) &&
+           !(_seek_pending.load() && _seek_generation.load() == generation))
     {
         if (!sink_paused)
         {
@@ -550,7 +636,7 @@ bool AudioService::wait_if_paused(uint32_t generation)
 #endif
     }
 
-    if (sink_paused && !cancelled(generation))
+    if (sink_paused && !cancelled(generation) && !_pause_requested.load())
         _sink->resume();
     return !cancelled(generation);
 }

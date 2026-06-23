@@ -918,8 +918,8 @@ network timing and codec complexity.
 - [x] Prevent paths from escaping the configured SD root.
 - [x] Implement file open, read, EOF, close, cancel, and seek.
 - [x] Implement SD reads in small bounded chunks.
-- [ ] Check cancellation between chunks because the current local `FileHandler`
-      path uses blocking `fread()` and cannot interrupt an active read.
+- [x] Check cancellation between bounded read/decode blocks. The current local
+      `FileHandler` path still cannot interrupt an individual active `fread()`.
 - [x] Implement WAV RIFF parsing.
 - [x] Support PCM WAV input.
 - [x] Support at least 8-bit unsigned and 16-bit signed PCM.
@@ -952,41 +952,42 @@ network timing and codec complexity.
       sizes before seeking, reading, or allocating.
 - [x] Remove file-size-dependent allocations and use a fixed-capacity command
       queue so allocation failure cannot be triggered by WAV duration.
-- [ ] Implement seek for WAV/PCM files.
-- [ ] Test truncated and malformed WAV headers.
+- [x] Implement asynchronous, frame-aligned seek for WAV/PCM files.
+- [x] Test truncated and malformed WAV headers.
 - [ ] Test removal or failure of the SD card during playback.
 - [ ] Test multiple sample rates representative of speech and music.
 - [ ] Test repeated EOF/replay/stop behavior.
-- [ ] Test a WAV larger than available ESP32 RAM and confirm peak audio memory
-      remains bounded and approximately independent of file duration.
-- [ ] Test pause, resume, and stop during active SD reads and DAC writes.
+- [x] Test a WAV larger than internal ESP32 RAM; the 1,323,044-byte hardware
+      test file plays through the bounded streaming path.
+- [x] Test pause, resume, and stop during active SD reads and DAC writes.
 - [ ] Monitor heap before, during, and after repeated playback for leaks and
       loss of the largest free block.
 - [ ] Measure the audio worker stack high-water mark during WAV playback.
 
 Exit criteria:
 
-- [ ] `sd:/...wav` plays from A: on ESP32.
-- [ ] The same command plays the file on FujiNet-PC.
-- [ ] Disk and configuration SIO requests remain responsive during playback.
+- [x] `sd:/...wav` plays from A: on ESP32.
+- [x] The same command plays the file on FujiNet-PC.
+- [x] Disk and configuration SIO requests remain responsive during playback.
 - [ ] Position, duration, pause, resume, stop, volume, and seek work.
 - [ ] A multi-hour WAV uses essentially the same bounded working memory as a
       short WAV with the same format.
-- [ ] `AUDIOCMD_PLAY` performs no SD open, file read, WAV decode, or sink write
+- [x] `AUDIOCMD_PLAY` performs no SD open, file read, WAV decode, or sink write
       on the SIO service loop.
 - [ ] Allocation, malformed-input, SD-read, and output failures reach `ERROR`
       without aborting or resetting FujiNet.
 
 Phase 3 implementation note:
 
-- The first SD/WAV path decodes `sd:/...wav` during `AUDIOCMD_PLAY`, converts
-  PCM WAV data to mono signed 16-bit frames, and submits the decoded buffer to
-  `AudioService`.
-- Supported WAV input for this slice is RIFF/WAVE PCM format tag 1, mono or
-  stereo, 8-bit unsigned or 16-bit signed. Stereo is downmixed to mono.
-- The Atari manual test app now has a fixed `W` command for `sd:/fnaudio.wav`.
-- This first implementation is not true streaming playback. On classic ESP32,
-  testing a 1,323,044-byte WAV aborted in
+- The current SD/WAV path streams `sd:/...wav` from the core-0 worker, converts
+  bounded PCM blocks to mono signed 16-bit frames, and writes them incrementally
+  through `AudioService`.
+- Supported WAV input is RIFF/WAVE PCM format tag 1, mono or stereo, 8-bit
+  unsigned or 16-bit signed. Stereo is downmixed to mono.
+- The Atari manual test app has a fixed `W` command for `sd:/fnaudio.wav` and a
+  `K` command that seeks to 1000 milliseconds.
+- The original whole-file implementation was not true streaming playback. On
+  classic ESP32, testing a 1,323,044-byte WAV aborted in
   `AudioService::submit_pcm()` while `std::vector<int16_t>::assign()` attempted
   to allocate a second complete PCM buffer. The original decoded vector was
   still live, and the command queue would have made further full-buffer copies.
@@ -1010,9 +1011,13 @@ Phase 3 implementation note:
   architectural fix because memory would still scale with recording duration.
   The streaming path must maintain constant bounded working memory regardless
   of WAV size.
-- Seek is not yet wired into playback state. Stop and pause responsiveness must
-  be implemented through cancellation checks and bounded waits at each block
-  boundary.
+- Seek is now accepted as a four-byte little-endian millisecond payload. The
+  worker aligns it to an input frame, flushes and reopens the sink, and resumes
+  at the clamped file position without blocking SIO. Real-hardware seek remains
+  to be confirmed.
+- Decoder tests cover valid 8-bit mono and 16-bit stereo input, downmixing,
+  frame-aligned seeking and clamping, truncated RIFF lengths, oversized chunks,
+  and inconsistent format fields.
 
 ## Phase 4: Shared audio device and Atari bus registration
 
@@ -1084,27 +1089,27 @@ Atari bus as dedicated device `$65` / `A:`.
 - [x] Add a small Atari test program or documented test sequence using direct
       SIO calls. Initial app: `atari-audio-test/`, built with cc65 as
       `build/fnaudio-test.xex`.
-- [ ] Verify the existing P3:/SAM device remains compatible.
+- [x] Verify the existing P3:/SAM printer-interface device remains compatible.
+      SAM still uses its existing direct output path and has not yet been
+      migrated through `AudioService`; that remains Phase 9 work.
 
 Implementation notes:
 
-- The first `$65` implementation supports `gen:test-tone` / `test:tone` as the
-  live source. SD, WAV, HTTP, MP3, and other real sources remain in later phases.
-- FujiNet-PC and ESP32 Atari builds now register device `$65`; the SIO adapter
-  should no longer ignore command frames addressed to `$65`.
-- On FujiNet-PC, the generated test tone is submitted to `AudioService` and the
-  miniaudio sink. On ESP32, `$65` currently registers and queues audio work, but
-  hardware output and a production audio task/pump remain part of the platform
-  sink phases.
+- The `$65` implementation supports generated test tones and bounded streaming
+  playback of PCM WAV files from `sd:` sources.
+- FujiNet-PC and ESP32 Atari builds register device `$65`; real classic ESP32
+  hardware playback through the GPIO25 DAC has been verified.
+- FujiNet-PC uses the miniaudio sink. Classic ESP32 uses the continuous DAC/DMA
+  sink from a core-0 audio worker while SIO remains responsive on core 1.
 - `SET_VOLUME` currently uses the payload form exercised by the Atari test
   program. Decide later whether an AUX-only shortcut is needed for convenience
   or compatibility.
 
 Exit criteria:
 
-- [ ] An Atari can start SD WAV playback through `$65`.
+- [x] An Atari can start SD WAV playback through `$65`.
 - [x] A host can poll status during generated test-tone playback.
-- [ ] Other FujiNet SIO devices continue operating during audio.
+- [x] Other FujiNet SIO devices continue operating during audio.
 - [ ] Invalid lengths and commands cannot corrupt state or exhaust memory.
 - [x] The shared `audioDevice` compiles without depending on headers from
       `lib/device/sio/`.

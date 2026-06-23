@@ -150,9 +150,9 @@ static void cmd_metadata(void)
 
 static void cmd_seek(void)
 {
-    static const unsigned char seek_zero[4] = {0, 0, 0, 0};
-    unsigned char st = audio_sio(AUDIOCMD_SEEK, SIO_WRITE, (void *)seek_zero, 4, 0);
-    show_result("seek 0", AUDIOCMD_SEEK, st, 0);
+    static const unsigned char seek_one_second[4] = {0xE8, 0x03, 0x00, 0x00};
+    unsigned char st = audio_sio(AUDIOCMD_SEEK, SIO_WRITE, (void *)seek_one_second, 4, 0);
+    show_result("seek 1000 ms", AUDIOCMD_SEEK, st, 0);
 }
 
 static void draw_menu(void)
@@ -171,7 +171,7 @@ static void draw_menu(void)
     cputs("X stop\r\n");
     cputs("V volume 50\r\n");
     cputs("M metadata title\r\n");
-    cputs("K seek 0\r\n");
+    cputs("K seek 1000 ms\r\n");
     cputs("Q quit\r\n\r\n");
     cputs("select: ");
 }

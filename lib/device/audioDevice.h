@@ -44,7 +44,7 @@ public:
     void audiocmd_set_volume(uint8_t aux_volume, bool read_payload);
     void audiocmd_get_info();
     void audiocmd_get_metadata(uint8_t field_id, uint16_t requested_length);
-    void audiocmd_seek(uint32_t position_ms);
+    void audiocmd_seek();
 
 protected:
     AudioSinkNull _null_sink;

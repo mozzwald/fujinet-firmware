@@ -22,6 +22,7 @@ public:
     void cancel() override;
     bool is_seekable() const override;
     bool seek(uint32_t position) override;
+    uint32_t position() const override;
     std::string content_type() const override;
     uint32_t content_length() const override;
     std::string metadata(const std::string &field) const override;

@@ -21,6 +21,9 @@
 #include "AudioSink.h"
 #include "AudioTypes.h"
 
+class AudioDecoderWav;
+class AudioSource;
+
 class AudioService
 {
 public:
@@ -39,6 +42,7 @@ public:
     void pause();
     void resume();
     void set_volume(uint8_t percent);
+    bool seek(uint32_t position_ms);
 
 private:
     bool enqueue(const AudioCommand &command);
@@ -46,6 +50,10 @@ private:
     void process_source(const AudioCommand &command);
     void process_test_tone(const AudioCommand &command);
     bool write_frames(const int16_t *frames, size_t frame_count, uint32_t generation);
+    bool process_seek(AudioSource &source,
+                      AudioDecoderWav &decoder,
+                      const AudioFormat &format,
+                      uint32_t generation);
     bool wait_if_paused(uint32_t generation);
     bool cancelled(uint32_t generation) const;
     void finish_cancelled(uint32_t generation);
@@ -76,6 +84,9 @@ private:
     std::atomic<uint32_t> _generation{1};
     std::atomic<bool> _pause_requested{false};
     std::atomic<uint8_t> _requested_volume{100};
+    std::atomic<bool> _seek_pending{false};
+    std::atomic<uint32_t> _seek_position_ms{0};
+    std::atomic<uint32_t> _seek_generation{0};
     std::atomic<bool> _stop_worker{false};
     uint64_t _stream_frames_written = 0;
 

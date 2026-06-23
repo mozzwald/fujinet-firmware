@@ -66,11 +66,16 @@ bool AudioSourceMemory::is_seekable() const
 
 bool AudioSourceMemory::seek(uint32_t position)
 {
-    if (position > _data.size())
+    if (!_open || position > _data.size())
         return false;
 
     _position = position;
     return true;
+}
+
+uint32_t AudioSourceMemory::position() const
+{
+    return static_cast<uint32_t>(_position);
 }
 
 std::string AudioSourceMemory::content_type() const

@@ -6,6 +6,7 @@
 #include <esp32/rom/ets_sys.h>
 #include "test_pass.h"
 #include "test_networkprotocol_translation.h"
+#include "test_audio_decoder_wav.h"
 #include "../lib/hardware/fnSystem.h"
 
 extern "C"
@@ -24,6 +25,7 @@ void app_main()
 
     test_pass_run();
     tests_networkprotocol_translation();
+    tests_audio_decoder_wav();
 
     UNITY_END();
 }
