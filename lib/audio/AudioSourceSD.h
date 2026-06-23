@@ -27,6 +27,7 @@ public:
 private:
     static bool normalize_uri(const std::string &uri, std::string *path);
     static bool has_wav_extension(const std::string &path);
+    static bool has_mp3_extension(const std::string &path);
 
     FILE *_file = nullptr;
     std::string _path;

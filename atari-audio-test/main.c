@@ -29,7 +29,8 @@ extern unsigned char sio_call(void);
 
 static unsigned char buffer[128];
 static const char tone_source[] = "gen:test-tone";
-static const char wav_source[] = "sd:/fnaudio.wav";
+static const char sd_wav_source[] = "sd:/fnaudio.wav";
+static const char sd_mp3_source[] = "sd:/fnaudio.mp3";
 
 static void wait_key(void)
 {
@@ -165,12 +166,13 @@ static void draw_menu(void)
     cputs("I info\r\n");
     cputs("O set tone source\r\n");
     cputs("W set sd:/fnaudio.wav\r\n");
+    cputs("M set sd:/fnaudio.mp3\r\n");
     cputs("P play\r\n");
     cputs("A pause\r\n");
     cputs("R resume\r\n");
     cputs("X stop\r\n");
     cputs("V volume 50\r\n");
-    cputs("M metadata title\r\n");
+    cputs("T metadata title\r\n");
     cputs("K seek 1000 ms\r\n");
     cputs("Q quit\r\n\r\n");
     cputs("select: ");
@@ -207,7 +209,11 @@ int main(void)
             break;
         case 'w':
         case 'W':
-            cmd_set_source(wav_source);
+            cmd_set_source(sd_wav_source);
+            break;
+        case 'm':
+        case 'M':
+            cmd_set_source(sd_mp3_source);
             break;
         case 'p':
         case 'P':
@@ -229,8 +235,8 @@ int main(void)
         case 'V':
             cmd_volume();
             break;
-        case 'm':
-        case 'M':
+        case 't':
+        case 'T':
             cmd_metadata();
             break;
         case 'k':

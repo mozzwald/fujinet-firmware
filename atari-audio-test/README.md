@@ -40,7 +40,9 @@ Expected behavior with the `$65` audio device registered:
   FujiNet-PC this should be audible through the host output device when one is
   available.
 - `W` sets the source to `sd:/fnaudio.wav` for SD/WAV playback testing. Put a
-  small PCM WAV file named `fnaudio.wav` at the SD root, then press `W` and `P`.
+  WAV file named `fnaudio.wav` at the SD root, then press `W` and `P`.
+- `M` sets the source to `sd:/fnaudio.mp3` for SD/MP3 playback testing. Put an
+  MP3 file named `fnaudio.mp3` at the SD root, then press `M` and `P`.
 - Pause, resume, stop, volume, info, and metadata can be selected from the menu.
 - Seek is expected to fail until service-level seek support is wired to SD/HTTP
   sources.
@@ -56,14 +58,16 @@ registration is present in the build being run.
 - `I`: extended status
 - `O`: set generated tone source
 - `W`: set `sd:/fnaudio.wav`
+- `M`: set `sd:/fnaudio.mp3`
 - `P`: play
 - `A`: pause
 - `R`: resume
 - `X`: stop
 - `V`: volume
-- `M`: metadata
+- `T`: metadata title
 - `K`: seek
 - `Q`: quit
 
-The generated tone source is `gen:test-tone`. The fixed WAV source is
-`sd:/fnaudio.wav` so the same bootable app can be used as SD/WAV support grows.
+The generated tone source is `gen:test-tone`. The fixed SD test sources are
+`sd:/fnaudio.wav` and `sd:/fnaudio.mp3` so the same bootable app can compare
+WAV and MP3 playback behavior.

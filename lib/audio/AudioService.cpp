@@ -4,11 +4,58 @@
 #include <array>
 #include <chrono>
 #include <cstring>
+#include <memory>
+#include <new>
 
 #include "AudioDebug.h"
+#include "AudioDecoderMp3.h"
 #include "AudioDecoderWav.h"
+#include "AudioRingBuffer.h"
 #include "AudioSourceSD.h"
 #include "AudioTestTone.h"
+
+#ifdef ESP_PLATFORM
+#include "debug.h"
+#include <esp_heap_caps.h>
+#define MP3_TRACE(...) Debug_printf(__VA_ARGS__)
+#else
+#define MP3_TRACE(...)
+#endif
+
+namespace
+{
+#ifdef ESP_PLATFORM
+constexpr uint32_t AUDIO_WORKER_STACK_BYTES = 32768;
+#endif
+constexpr size_t MP3_DECODE_FRAMES = 2048;
+constexpr size_t MP3_DRAIN_FRAMES = 512;
+constexpr size_t MP3_PCM_QUEUE_FRAMES = 32768;
+constexpr size_t MP3_PCM_PREFILL_FRAMES = 16384;
+constexpr size_t MP3_PCM_REFILL_FRAMES = 16384;
+#ifdef ESP_PLATFORM
+constexpr uint32_t MP3_OUTPUT_STACK_BYTES = 3072;
+constexpr UBaseType_t MP3_OUTPUT_STARTUP_PRIORITY = 4;
+constexpr UBaseType_t MP3_OUTPUT_PLAY_PRIORITY = 6;
+#define MP3_USE_OUTPUT_TASK 0
+#endif
+
+bool source_is_mp3(const AudioSource &source)
+{
+    const std::string content_type = source.content_type();
+    if (content_type == "audio/mpeg" || content_type == "audio/mp3")
+        return true;
+
+    std::string source_path = source.metadata("source");
+    if (source_path.size() < 4)
+        return false;
+
+    const size_t offset = source_path.size() - 4;
+    return (source_path[offset] == '.') &&
+           (source_path[offset + 1] == 'm' || source_path[offset + 1] == 'M') &&
+           (source_path[offset + 2] == 'p' || source_path[offset + 2] == 'P') &&
+           (source_path[offset + 3] == '3');
+}
+}
 
 AudioService::AudioService()
     : _commands(1)
@@ -76,7 +123,7 @@ void AudioService::start()
     if (_worker == nullptr)
     {
         _stop_worker = false;
-        if (xTaskCreatePinnedToCore(worker_task, "audioSvc", 8192, this, 5, &_worker, 0) != pdPASS)
+        if (xTaskCreatePinnedToCore(worker_task, "audioSvc", AUDIO_WORKER_STACK_BYTES, this, 5, &_worker, 0) != pdPASS)
             set_error(AudioError::BUFFER_ALLOCATION_FAILURE);
     }
 #endif
@@ -381,8 +428,436 @@ void AudioService::process_source(const AudioCommand &command)
         return;
     }
 
-    AudioDecoderWav decoder;
     AudioError error = AudioError::NONE;
+    if (source_is_mp3(source))
+    {
+        AudioDecoderMp3 decoder;
+        if (!decoder.open(source, &error))
+        {
+            source.close();
+            if (!cancelled(command.generation))
+                set_error(error);
+            else
+                finish_cancelled(command.generation);
+            return;
+        }
+
+        const AudioFormat format = decoder.format();
+        MP3_TRACE("audio mp3 format rate=%lu ch=%u bits=%u\r\n",
+                  static_cast<unsigned long>(format.sample_rate),
+                  format.channels,
+                  format.bits_per_sample);
+        set_stream_status(AudioSourceKind::URI_STREAM, AudioCodec::MP3, format, decoder.duration_ms());
+        if (cancelled(command.generation))
+        {
+            source.cancel();
+            source.close();
+            finish_cancelled(command.generation);
+            return;
+        }
+
+        if (!_sink->open(format))
+        {
+            source.close();
+            set_error(AudioError::OUTPUT_INITIALIZATION_FAILURE);
+            return;
+        }
+        _sink->set_volume(_requested_volume.load());
+
+        AudioRingBuffer pcm_queue;
+        if (!pcm_queue.reset(MP3_PCM_QUEUE_FRAMES * sizeof(int16_t)))
+        {
+            source.close();
+            _sink->close();
+            set_error(AudioError::BUFFER_ALLOCATION_FAILURE);
+            return;
+        }
+
+#if defined(ESP_PLATFORM) && MP3_USE_OUTPUT_TASK
+        SemaphoreHandle_t pcm_mutex = xSemaphoreCreateMutex();
+        if (pcm_mutex == nullptr)
+        {
+            source.close();
+            _sink->close();
+            set_error(AudioError::BUFFER_ALLOCATION_FAILURE);
+            return;
+        }
+#endif
+
+        auto lock_pcm_queue = [&]() {
+#if defined(ESP_PLATFORM) && MP3_USE_OUTPUT_TASK
+            xSemaphoreTake(pcm_mutex, portMAX_DELAY);
+#endif
+        };
+        auto unlock_pcm_queue = [&]() {
+#if defined(ESP_PLATFORM) && MP3_USE_OUTPUT_TASK
+            xSemaphoreGive(pcm_mutex);
+#endif
+        };
+
+        auto set_buffered_frames = [this, &format](size_t frames) {
+#ifndef ESP_PLATFORM
+            std::lock_guard<std::mutex> lock(_status_lock);
+#else
+            lock_status();
+#endif
+            _status.buffered_ms = format.sample_rate == 0
+                                      ? 0
+                                      : static_cast<uint32_t>((frames * 1000) / format.sample_rate);
+#ifdef ESP_PLATFORM
+            unlock_status();
+#endif
+        };
+
+        auto pcm = std::unique_ptr<std::array<int16_t, MP3_DECODE_FRAMES>>(new (std::nothrow) std::array<int16_t, MP3_DECODE_FRAMES>());
+        auto drain_pcm = std::unique_ptr<std::array<int16_t, MP3_DRAIN_FRAMES>>(new (std::nothrow) std::array<int16_t, MP3_DRAIN_FRAMES>());
+        if (!pcm || !drain_pcm)
+        {
+            source.close();
+            _sink->close();
+#if defined(ESP_PLATFORM) && MP3_USE_OUTPUT_TASK
+            vSemaphoreDelete(pcm_mutex);
+#endif
+            set_error(AudioError::BUFFER_ALLOCATION_FAILURE);
+            return;
+        }
+        bool decoder_finished = false;
+        uint16_t decode_log_count = 0;
+
+        auto drain_queue = [&]() -> bool {
+            const size_t available_bytes = pcm_queue.size() & ~(sizeof(int16_t) - 1);
+            if (available_bytes == 0)
+                return true;
+
+            const size_t bytes_to_read = std::min(available_bytes, drain_pcm->size() * sizeof(int16_t));
+            const size_t bytes_read = pcm_queue.read(reinterpret_cast<uint8_t *>(drain_pcm->data()), bytes_to_read);
+            const size_t frames_read = bytes_read / sizeof(int16_t);
+            set_buffered_frames(pcm_queue.size() / sizeof(int16_t));
+            if (frames_read == 0)
+                return true;
+
+            _sink->set_volume(_requested_volume.load());
+            if (!write_frames(drain_pcm->data(), frames_read, command.generation))
+                return false;
+            update_progress(0, frames_read);
+            return true;
+        };
+
+        auto fill_queue = [&](size_t target_frames) -> bool {
+            const size_t target_bytes = std::min(target_frames * sizeof(int16_t), pcm_queue.capacity());
+            while (!decoder_finished && pcm_queue.size() < target_bytes && wait_if_paused(command.generation))
+            {
+                size_t frames_produced = 0;
+                uint32_t bytes_consumed = 0;
+                if (!decoder.decode(source, pcm->data(), pcm->size(), &frames_produced, &bytes_consumed, &error))
+                {
+                    if (!cancelled(command.generation))
+                        set_error(error);
+                    return false;
+                }
+                update_progress(bytes_consumed, 0);
+                if (decode_log_count < 8)
+                {
+                    MP3_TRACE("audio mp3 prefill frames=%u bytes=%lu queue=%u\r\n",
+                              static_cast<unsigned>(frames_produced),
+                              static_cast<unsigned long>(bytes_consumed),
+                              static_cast<unsigned>(pcm_queue.size()));
+                    decode_log_count++;
+                }
+                if (frames_produced == 0)
+                {
+                    decoder_finished = true;
+                    break;
+                }
+
+                const uint8_t *bytes = reinterpret_cast<const uint8_t *>(pcm->data());
+                size_t remaining = frames_produced * sizeof(int16_t);
+                while (remaining != 0 && wait_if_paused(command.generation))
+                {
+                    const size_t written = pcm_queue.write(bytes, remaining);
+                    bytes += written;
+                    remaining -= written;
+                    set_buffered_frames(pcm_queue.size() / sizeof(int16_t));
+
+                    if (remaining != 0 && !drain_queue())
+                        return false;
+                    if (written == 0 && pcm_queue.full() && !drain_queue())
+                        return false;
+                }
+            }
+            return !cancelled(command.generation);
+        };
+
+        auto decode_one_chunk = [&]() -> bool {
+            if (decoder_finished)
+                return true;
+
+            const size_t max_decode_bytes = pcm->size() * sizeof(int16_t);
+            lock_pcm_queue();
+            const bool has_space = pcm_queue.free_space() >= max_decode_bytes;
+            unlock_pcm_queue();
+            if (!has_space)
+                return true;
+
+            size_t frames_produced = 0;
+            uint32_t bytes_consumed = 0;
+            if (!decoder.decode(source, pcm->data(), pcm->size(), &frames_produced, &bytes_consumed, &error))
+            {
+                if (!cancelled(command.generation))
+                    set_error(error);
+                return false;
+            }
+            update_progress(bytes_consumed, 0);
+            if (decode_log_count < 16)
+            {
+                MP3_TRACE("audio mp3 decode frames=%u bytes=%lu free=%u\r\n",
+                          static_cast<unsigned>(frames_produced),
+                          static_cast<unsigned long>(bytes_consumed),
+                          static_cast<unsigned>(pcm_queue.free_space()));
+                decode_log_count++;
+            }
+            if (frames_produced == 0)
+            {
+                decoder_finished = true;
+                return true;
+            }
+
+            const size_t frame_bytes = frames_produced * sizeof(int16_t);
+            lock_pcm_queue();
+            if (pcm_queue.write(reinterpret_cast<const uint8_t *>(pcm->data()), frame_bytes) != frame_bytes)
+            {
+                unlock_pcm_queue();
+                set_error(AudioError::BUFFER_ALLOCATION_FAILURE);
+                return false;
+            }
+            set_buffered_frames(pcm_queue.size() / sizeof(int16_t));
+            unlock_pcm_queue();
+            return !cancelled(command.generation);
+        };
+
+#if defined(ESP_PLATFORM) && MP3_USE_OUTPUT_TASK
+        struct Mp3ConsumerContext
+        {
+            AudioService *service = nullptr;
+            AudioRingBuffer *queue = nullptr;
+            SemaphoreHandle_t mutex = nullptr;
+            std::atomic<bool> start_requested{false};
+            std::atomic<bool> producer_done{false};
+            std::atomic<bool> consumer_done{false};
+            std::atomic<bool> consumer_ok{true};
+            uint32_t generation = 0;
+            AudioFormat format;
+            std::array<int16_t, MP3_DRAIN_FRAMES> output_pcm = {};
+            uint16_t write_log_count = 0;
+        };
+
+        Mp3ConsumerContext *consumer_context = new Mp3ConsumerContext();
+        if (consumer_context == nullptr)
+        {
+            source.cancel();
+            source.close();
+            _sink->close();
+            vSemaphoreDelete(pcm_mutex);
+            set_error(AudioError::BUFFER_ALLOCATION_FAILURE);
+            return;
+        }
+
+        consumer_context->service = this;
+        consumer_context->queue = &pcm_queue;
+        consumer_context->mutex = pcm_mutex;
+        consumer_context->generation = command.generation;
+        consumer_context->format = format;
+
+        auto consumer_entry = +[](void *arg) {
+            Mp3ConsumerContext *ctx = static_cast<Mp3ConsumerContext *>(arg);
+            AudioService *service = ctx->service;
+
+            while (!ctx->start_requested.load() && !service->cancelled(ctx->generation))
+            {
+                if (ctx->producer_done.load())
+                    break;
+                vTaskDelay(pdMS_TO_TICKS(1));
+            }
+
+            MP3_TRACE("audio mp3 consumer start\r\n");
+
+            while (!service->cancelled(ctx->generation))
+            {
+                if (!service->wait_if_paused(ctx->generation))
+                    break;
+
+                xSemaphoreTake(ctx->mutex, portMAX_DELAY);
+                const size_t available_bytes = ctx->queue->size() & ~(sizeof(int16_t) - 1);
+                const bool producer_done = ctx->producer_done.load();
+                if (available_bytes == 0)
+                {
+                    xSemaphoreGive(ctx->mutex);
+                    if (producer_done)
+                        break;
+                    vTaskDelay(pdMS_TO_TICKS(1));
+                    continue;
+                }
+
+                const size_t bytes_to_read = std::min(available_bytes, ctx->output_pcm.size() * sizeof(int16_t));
+                const size_t bytes_read = ctx->queue->read(reinterpret_cast<uint8_t *>(ctx->output_pcm.data()), bytes_to_read);
+                const size_t queued_frames = ctx->queue->size() / sizeof(int16_t);
+                xSemaphoreGive(ctx->mutex);
+
+                service->lock_status();
+                service->_status.buffered_ms = ctx->format.sample_rate == 0
+                                                   ? 0
+                                                   : static_cast<uint32_t>((queued_frames * 1000) / ctx->format.sample_rate);
+                service->unlock_status();
+
+                const size_t frames_read = bytes_read / sizeof(int16_t);
+                if (frames_read == 0)
+                    continue;
+
+                service->_sink->set_volume(service->_requested_volume.load());
+                const size_t written = service->_sink->write(ctx->output_pcm.data(), frames_read);
+                if (ctx->write_log_count < 16)
+                {
+                    MP3_TRACE("audio mp3 out frames=%u written=%u queued=%u\r\n",
+                              static_cast<unsigned>(frames_read),
+                              static_cast<unsigned>(written),
+                              static_cast<unsigned>(queued_frames));
+                    ctx->write_log_count++;
+                }
+                if (written != frames_read)
+                {
+                    MP3_TRACE("audio mp3 out short write frames=%u written=%u\r\n",
+                              static_cast<unsigned>(frames_read),
+                              static_cast<unsigned>(written));
+                    if (!service->cancelled(ctx->generation))
+                    {
+                        service->lock_status();
+                        service->_status.underrun_count++;
+                        service->_counters.underruns++;
+                        service->unlock_status();
+                    }
+                    ctx->consumer_ok = false;
+                    break;
+                }
+                service->update_progress(0, written);
+            }
+
+            ctx->consumer_done = true;
+            MP3_TRACE("audio mp3 consumer done ok=%u producer=%u\r\n",
+                      ctx->consumer_ok.load() ? 1 : 0,
+                      ctx->producer_done.load() ? 1 : 0);
+            vTaskDelete(nullptr);
+        };
+
+        TaskHandle_t consumer_task = nullptr;
+        MP3_TRACE("audio mp3 creating consumer task\r\n");
+        BaseType_t create_result = xTaskCreatePinnedToCore(consumer_entry, "audioOut", MP3_OUTPUT_STACK_BYTES, consumer_context, MP3_OUTPUT_STARTUP_PRIORITY, &consumer_task, 0);
+        MP3_TRACE("audio mp3 consumer create result=%ld handle=%p\r\n",
+                  static_cast<long>(create_result),
+                  consumer_task);
+        if (create_result != pdPASS)
+        {
+            MP3_TRACE("audio mp3 consumer create failed heap=%lu internal=%lu largest=%lu\r\n",
+                      static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_8BIT)),
+                      static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+                      static_cast<unsigned long>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
+            source.cancel();
+            source.close();
+            _sink->close();
+            vSemaphoreDelete(pcm_mutex);
+            delete consumer_context;
+            set_error(AudioError::BUFFER_ALLOCATION_FAILURE);
+            return;
+        }
+
+        MP3_TRACE("audio mp3 starting prefill\r\n");
+        if (!fill_queue(MP3_PCM_PREFILL_FRAMES))
+        {
+            consumer_context->producer_done = true;
+            consumer_context->start_requested = true;
+            while (!consumer_context->consumer_done.load())
+                vTaskDelay(pdMS_TO_TICKS(1));
+            source.cancel();
+            source.close();
+            _sink->close();
+            vSemaphoreDelete(pcm_mutex);
+            delete consumer_context;
+            return;
+        }
+        MP3_TRACE("audio mp3 prefill done queued=%u finished=%u\r\n",
+                  static_cast<unsigned>(pcm_queue.size()),
+                  decoder_finished ? 1 : 0);
+        set_state(AudioState::PLAYING);
+        vTaskPrioritySet(consumer_task, MP3_OUTPUT_PLAY_PRIORITY);
+        consumer_context->start_requested = true;
+
+        while (wait_if_paused(command.generation) && !decoder_finished && consumer_context->consumer_ok.load())
+        {
+            lock_pcm_queue();
+            const bool has_decode_space = pcm_queue.free_space() >= (pcm->size() * sizeof(int16_t));
+            unlock_pcm_queue();
+            if (has_decode_space)
+            {
+                if (!decode_one_chunk())
+                    break;
+            }
+            else
+            {
+                vTaskDelay(pdMS_TO_TICKS(1));
+            }
+        }
+
+        consumer_context->producer_done = true;
+        while (!consumer_context->consumer_done.load())
+            vTaskDelay(pdMS_TO_TICKS(1));
+        vSemaphoreDelete(pcm_mutex);
+        delete consumer_context;
+#else
+        if (!fill_queue(MP3_PCM_PREFILL_FRAMES))
+        {
+            source.cancel();
+            source.close();
+            _sink->close();
+            return;
+        }
+        MP3_TRACE("audio mp3 prefill done queued=%u finished=%u\r\n",
+                  static_cast<unsigned>(pcm_queue.size()),
+                  decoder_finished ? 1 : 0);
+        set_state(AudioState::PLAYING);
+
+        while (wait_if_paused(command.generation) && (!decoder_finished || !pcm_queue.empty()))
+        {
+            if (!drain_queue())
+                break;
+
+            if (!decoder_finished && pcm_queue.size() <= MP3_PCM_REFILL_FRAMES * sizeof(int16_t) &&
+                !decode_one_chunk())
+                break;
+        }
+#endif
+
+        source.cancel();
+        source.close();
+        if (cancelled(command.generation))
+        {
+            _sink->close();
+            finish_cancelled(command.generation);
+            return;
+        }
+
+        if (status().state == AudioState::ERROR)
+        {
+            _sink->close();
+            return;
+        }
+
+        _sink->drain();
+        _sink->close();
+        if (!cancelled(command.generation))
+            set_state(AudioState::FINISHED);
+        return;
+    }
+
+    AudioDecoderWav decoder;
     if (!decoder.open(source, &error))
     {
         source.close();

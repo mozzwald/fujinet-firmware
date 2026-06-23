@@ -276,6 +276,7 @@ set(SOURCES src/main.cpp
     lib/audio/AudioSourceSD.h lib/audio/AudioSourceSD.cpp
     lib/audio/AudioDecoder.h
     lib/audio/AudioDecoderWav.h lib/audio/AudioDecoderWav.cpp
+    lib/audio/AudioDecoderMp3.h lib/audio/AudioDecoderMp3.cpp
     lib/audio/AudioSink.h
     lib/audio/AudioMixer.h lib/audio/AudioMixer.cpp
     lib/audio/AudioSinkNull.h lib/audio/AudioSinkNull.cpp

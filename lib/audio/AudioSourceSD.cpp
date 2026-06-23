@@ -30,7 +30,12 @@ bool AudioSourceSD::open(const std::string &uri)
 
     const long size = fnSDFAT.filesize(_path.c_str());
     _content_length = size > 0 ? static_cast<uint32_t>(size) : 0;
-    _content_type = has_wav_extension(_path) ? "audio/wav" : "application/octet-stream";
+    if (has_wav_extension(_path))
+        _content_type = "audio/wav";
+    else if (has_mp3_extension(_path))
+        _content_type = "audio/mpeg";
+    else
+        _content_type = "application/octet-stream";
     _cancelled = false;
     return true;
 }
@@ -164,4 +169,16 @@ bool AudioSourceSD::has_wav_extension(const std::string &path)
            std::tolower(static_cast<unsigned char>(ext[1])) == 'w' &&
            std::tolower(static_cast<unsigned char>(ext[2])) == 'a' &&
            std::tolower(static_cast<unsigned char>(ext[3])) == 'v';
+}
+
+bool AudioSourceSD::has_mp3_extension(const std::string &path)
+{
+    if (path.size() < 4)
+        return false;
+
+    const std::string ext = path.substr(path.size() - 4);
+    return std::tolower(static_cast<unsigned char>(ext[0])) == '.' &&
+           std::tolower(static_cast<unsigned char>(ext[1])) == 'm' &&
+           std::tolower(static_cast<unsigned char>(ext[2])) == 'p' &&
+           std::tolower(static_cast<unsigned char>(ext[3])) == '3';
 }

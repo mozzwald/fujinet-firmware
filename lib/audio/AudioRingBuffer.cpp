@@ -1,17 +1,60 @@
 #include "AudioRingBuffer.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
+
+#ifdef ESP_PLATFORM
+#include "sdkconfig.h"
+#include <esp_heap_caps.h>
+#endif
 
 AudioRingBuffer::AudioRingBuffer(size_t capacity)
 {
     reset(capacity);
 }
 
+AudioRingBuffer::~AudioRingBuffer()
+{
+#ifdef ESP_PLATFORM
+    heap_caps_free(_buffer);
+#else
+    std::free(_buffer);
+#endif
+    _buffer = nullptr;
+    _capacity = 0;
+}
+
 bool AudioRingBuffer::reset(size_t capacity)
 {
-    _buffer.assign(capacity, 0);
+#ifdef ESP_PLATFORM
+    heap_caps_free(_buffer);
+#else
+    std::free(_buffer);
+#endif
+    _buffer = nullptr;
+    _capacity = 0;
     clear();
-    return _buffer.size() == capacity;
+
+    if (capacity == 0)
+        return true;
+
+#ifdef ESP_PLATFORM
+#if CONFIG_SPIRAM
+    _buffer = static_cast<uint8_t *>(heap_caps_malloc(capacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+#endif
+    if (_buffer == nullptr)
+        _buffer = static_cast<uint8_t *>(heap_caps_malloc(capacity, MALLOC_CAP_DEFAULT));
+#else
+    _buffer = static_cast<uint8_t *>(std::malloc(capacity));
+#endif
+
+    if (_buffer == nullptr)
+        return false;
+
+    std::memset(_buffer, 0, capacity);
+    _capacity = capacity;
+    return true;
 }
 
 void AudioRingBuffer::clear()
@@ -23,17 +66,17 @@ void AudioRingBuffer::clear()
 
 size_t AudioRingBuffer::write(const uint8_t *data, size_t length)
 {
-    if (data == nullptr || length == 0 || _buffer.empty())
+    if (data == nullptr || length == 0 || _buffer == nullptr || _capacity == 0)
         return 0;
 
     size_t written = 0;
-    while (written < length && _size < _buffer.size())
+    while (written < length && _size < _capacity)
     {
-        const size_t contiguous = std::min(length - written, _buffer.size() - _write_pos);
-        const size_t available = std::min(contiguous, _buffer.size() - _size);
+        const size_t contiguous = std::min(length - written, _capacity - _write_pos);
+        const size_t available = std::min(contiguous, _capacity - _size);
 
-        std::copy(data + written, data + written + available, _buffer.begin() + _write_pos);
-        _write_pos = (_write_pos + available) % _buffer.size();
+        std::memcpy(_buffer + _write_pos, data + written, available);
+        _write_pos = (_write_pos + available) % _capacity;
         _size += available;
         written += available;
     }
@@ -43,17 +86,17 @@ size_t AudioRingBuffer::write(const uint8_t *data, size_t length)
 
 size_t AudioRingBuffer::read(uint8_t *data, size_t length)
 {
-    if (data == nullptr || length == 0 || _buffer.empty())
+    if (data == nullptr || length == 0 || _buffer == nullptr || _capacity == 0)
         return 0;
 
     size_t read_count = 0;
     while (read_count < length && _size > 0)
     {
-        const size_t contiguous = std::min(length - read_count, _buffer.size() - _read_pos);
+        const size_t contiguous = std::min(length - read_count, _capacity - _read_pos);
         const size_t available = std::min(contiguous, _size);
 
-        std::copy(_buffer.begin() + _read_pos, _buffer.begin() + _read_pos + available, data + read_count);
-        _read_pos = (_read_pos + available) % _buffer.size();
+        std::memcpy(data + read_count, _buffer + _read_pos, available);
+        _read_pos = (_read_pos + available) % _capacity;
         _size -= available;
         read_count += available;
     }

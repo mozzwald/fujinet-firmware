@@ -272,7 +272,7 @@ Required operations:
 Initial implementations:
 
 - WAV/PCM decoder.
-- MP3 decoder using Espressif `esp_audio_codec` on ESP32 and miniaudio on PC.
+- MP3 decoder using the vendored miniaudio/dr_mp3 decoder on ESP32 and PC.
 
 Later implementations:
 
@@ -954,27 +954,32 @@ network timing and codec complexity.
       queue so allocation failure cannot be triggered by WAV duration.
 - [x] Implement asynchronous, frame-aligned seek for WAV/PCM files.
 - [x] Test truncated and malformed WAV headers.
-- [ ] Test removal or failure of the SD card during playback.
-- [ ] Test multiple sample rates representative of speech and music.
-- [ ] Test repeated EOF/replay/stop behavior.
+- [ ] Test removal or failure of the SD card during playback. Deferred at the
+      user's request so Phase 3 does not block on remaining manual tests.
+- [ ] Test multiple sample rates representative of speech and music. Deferred
+      at the user's request so Phase 3 does not block on remaining manual
+      tests.
+- [x] Test repeated EOF/replay/stop behavior.
 - [x] Test a WAV larger than internal ESP32 RAM; the 1,323,044-byte hardware
       test file plays through the bounded streaming path.
 - [x] Test pause, resume, and stop during active SD reads and DAC writes.
 - [ ] Monitor heap before, during, and after repeated playback for leaks and
-      loss of the largest free block.
+      loss of the largest free block. Deferred for now; do not block Phase 3
+      exit on heap measurement.
 - [ ] Measure the audio worker stack high-water mark during WAV playback.
+      Deferred for now; do not block Phase 3 exit on stack measurement.
 
 Exit criteria:
 
 - [x] `sd:/...wav` plays from A: on ESP32.
 - [x] The same command plays the file on FujiNet-PC.
 - [x] Disk and configuration SIO requests remain responsive during playback.
-- [ ] Position, duration, pause, resume, stop, volume, and seek work.
+- [x] Position, duration, pause, resume, stop, volume, and seek work.
 - [ ] A multi-hour WAV uses essentially the same bounded working memory as a
-      short WAV with the same format.
+      short WAV with the same format. Deferred with heap/stack measurement.
 - [x] `AUDIOCMD_PLAY` performs no SD open, file read, WAV decode, or sink write
       on the SIO service loop.
-- [ ] Allocation, malformed-input, SD-read, and output failures reach `ERROR`
+- [x] Allocation, malformed-input, SD-read, and output failures reach `ERROR`
       without aborting or resetting FujiNet.
 
 Phase 3 implementation note:
@@ -1013,8 +1018,8 @@ Phase 3 implementation note:
   of WAV size.
 - Seek is now accepted as a four-byte little-endian millisecond payload. The
   worker aligns it to an input frame, flushes and reopens the sink, and resumes
-  at the clamped file position without blocking SIO. Real-hardware seek remains
-  to be confirmed.
+  at the clamped file position without blocking SIO. Real-hardware seek has
+  been confirmed.
 - Decoder tests cover valid 8-bit mono and 16-bit stereo input, downmixing,
   frame-aligned seeking and clamping, truncated RIFF lengths, oversized chunks,
   and inconsistent format fields.
@@ -1078,7 +1083,7 @@ Atari bus as dedicated device `$65` / `A:`.
       SIO status where required.
 - [x] Implement extended status.
 - [x] Implement initial metadata retrieval for the active generated/test source.
-- [ ] Implement seek for seekable sources.
+- [x] Implement seek for seekable sources.
 - [x] Return an appropriate native bus error for unsupported commands; Atari
       maps this to the required SIO NAK/error response.
 - [x] Ensure no command handler performs source open, DNS, network read,
@@ -1120,32 +1125,90 @@ Exit criteria:
 
 Goal: support the most common file and internet-radio format.
 
-- [ ] Add the selected Espressif codec component to the ESP32 build.
-- [ ] Pin a reviewed component version rather than tracking an unbounded latest
-      version.
+- [x] Use the existing vendored miniaudio/dr_mp3 decoder for the first ESP32 and
+      FujiNet-PC MP3 implementation. No new external component is introduced in
+      this pass.
+- [x] Keep the decoder version pinned to the vendored miniaudio snapshot already
+      present in `components_pc/miniaudio`.
 - [ ] Record component license and source/version information.
-- [ ] Implement the ESP32 MP3 decoder adapter.
-- [ ] Implement the FujiNet-PC MP3 decoder adapter using miniaudio.
+- [x] Implement the ESP32 MP3 decoder adapter.
+- [x] Implement the FujiNet-PC MP3 decoder adapter using miniaudio.
 - [ ] Probe MP3 by signature in addition to URL extension.
-- [ ] Support ID3v2 tags before audio frames.
-- [ ] Skip or parse ID3 metadata without passing it to the decoder.
-- [ ] Handle arbitrary source chunk boundaries.
+- [x] Support ID3v2 tags before audio frames through the miniaudio/dr_mp3
+      decoder.
+- [x] Skip or parse ID3 metadata without passing it to the output path through
+      the miniaudio/dr_mp3 decoder.
+- [x] Handle arbitrary source chunk boundaries.
 - [ ] Handle bitrate and sample-rate changes where supported.
-- [ ] Downmix stereo MP3 output to mono.
-- [ ] Report decoded sample rate and bitrate.
+- [x] Downmix stereo MP3 output to mono.
+- [ ] Report decoded sample rate and bitrate. Decoded sample rate is reported;
+      bitrate remains TBD.
 - [ ] Test constant-bitrate MP3 files.
 - [ ] Test variable-bitrate MP3 files.
 - [ ] Test files with and without ID3 tags.
 - [ ] Test truncated and corrupt MP3 data.
 - [ ] Measure decoder CPU use on classic ESP32 and ESP32-S3.
 - [ ] Measure minimum safe task stack sizes.
+      Initial ESP32 MP3 hardware testing overflowed the 8192-byte `audioSvc`
+      stack during MP3 startup. A follow-up test also overflowed at 16384
+      bytes before the output-task context and service-owned MP3 scratch buffers
+      were moved off the worker stack. Direct testing then showed the vendored
+      miniaudio/dr_mp3 frame decoder still allocates internal decode scratch on
+      the caller stack, so the worker stack is provisionally set back to 32768
+      bytes and still needs high-water-mark measurement.
+Initial successful playback showed repeat-like skipping consistent with
+DAC starvation. A 16-descriptor queue with 2048-byte DMA buffers failed
+to allocate at DAC open on real ESP32 hardware. A smaller 12-descriptor
+queue with 1024-byte DMA buffers opened, but SDMMC later failed to allocate
+DMA-capable transfer memory during playback. The DAC queue is therefore
+restored to the original 8 descriptors of 1024 bytes so SDMMC retains
+internal DMA-capable heap. MP3 decode blocks remain at 2048 frames.
+- [x] Add a PCM ring-buffer queue between decoders and sinks for compressed
+      streams.
+      Implementation constraints:
+      - The DAC sink keeps only a small DMA-capable queue. Do not grow DAC DMA
+        descriptors to hide decode or SD jitter because SDMMC also needs
+        internal DMA-capable heap.
+      - The PCM queue stores decoded 16-bit mono frames and must not request
+        `MALLOC_CAP_DMA`.
+      - On ESP32, allocate the PCM queue from PSRAM first
+        (`MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT`) and fall back to default heap
+        only when PSRAM is unavailable.
+      - The MP3 path should prebuffer decoded PCM before entering `PLAYING`,
+        then refill the queue when it drops below a low-water mark while
+        draining smaller chunks to `AudioSink::write()`.
+      - Status `buffered_ms` should reflect queued decoded PCM, not DAC DMA
+        descriptors.
+      Initial implementation uses a 32768-frame decoded-PCM queue, starts
+      playback after 16384 frames or EOF, drains 512-frame chunks to the active
+      sink, and performs runtime refill incrementally with at most one
+      2048-frame MP3 decode chunk per drain cycle once the queue drops to
+      16384 frames. Runtime refill must not fill the queue back to full in one
+      burst because that starves the DAC at a timed interval.
+      A dedicated ESP32 `audioOut` consumer task was prototyped so the audio
+      worker could decode from SD while the consumer independently drained the
+      PCM ring buffer to the DAC. Hardware testing showed that the 32768-byte
+      worker stack required by the vendored MP3 decoder leaves too little
+      internal heap for a second FreeRTOS task on classic ESP32, so that path is
+      disabled for now. Re-enable it only after decoder stack use is reduced or
+      an alternate stack allocation strategy is proven on hardware.
+      With the output task disabled, real-hardware testing showed each audible
+      skip coincided with a large miniaudio source read. The ESP32 MP3 read
+      callback now bounds each SD read to 2048 bytes while still reporting the
+      decoder's requested size in debug output. This resolved the repeated skip
+      on real Atari/FujiNet hardware.
+      Hardware testing also confirmed that MP3 playback continues while the
+      Atari resets and reloads the test XEX, while the WebUI mounts a different
+      disk, and while the newly booted Atari program connects to a network TCP
+      port and streams data.
 - [ ] Measure firmware size and heap impact.
 
 Exit criteria:
 
-- [ ] SD-card MP3 files play on ESP32 and FujiNet-PC.
+- [x] SD-card MP3 files play on ESP32.
+- [ ] SD-card MP3 files play on FujiNet-PC.
 - [ ] Corrupt MP3 input reaches `ERROR` without crashing or wedging playback.
-- [ ] SIO service remains reliable during sustained decoding.
+- [x] SIO service remains reliable during sustained decoding.
 
 ## Phase 6: HTTP/HTTPS streaming and internet radio
 

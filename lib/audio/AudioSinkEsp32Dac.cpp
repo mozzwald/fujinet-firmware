@@ -16,7 +16,10 @@
 
 namespace
 {
-constexpr size_t DAC_CHUNK_BYTES = 1024;
+constexpr size_t DAC_DESCRIPTOR_COUNT = 8;
+constexpr size_t DAC_DESCRIPTOR_BYTES = 1024;
+constexpr size_t DAC_CHUNK_BYTES = DAC_DESCRIPTOR_BYTES;
+constexpr uint32_t DAC_WRITE_TIMEOUT_MS = 250;
 
 static uint8_t pcm16_to_dac8(int16_t sample, uint8_t volume)
 {
@@ -50,8 +53,8 @@ bool AudioSinkEsp32Dac::open(const AudioFormat &format)
 #if defined(ESP_PLATFORM) && !defined(CONFIG_IDF_TARGET_ESP32S3) && SOC_DAC_SUPPORTED
     dac_continuous_config_t config = {};
     config.chan_mask = PIN_DAC1 == GPIO_NUM_26 ? DAC_CHANNEL_MASK_CH1 : DAC_CHANNEL_MASK_CH0;
-    config.desc_num = 8;
-    config.buf_size = 1024;
+    config.desc_num = DAC_DESCRIPTOR_COUNT;
+    config.buf_size = DAC_DESCRIPTOR_BYTES;
     config.freq_hz = format.sample_rate;
     config.offset = 0;
     config.clk_src = DAC_DIGI_CLK_SRC_DEFAULT;
@@ -100,7 +103,7 @@ size_t AudioSinkEsp32Dac::write(const int16_t *pcm_frames, size_t frame_count)
                                              _dac_buffer.data(),
                                              chunk_frames,
                                              &bytes_loaded,
-                                             100);
+                                             DAC_WRITE_TIMEOUT_MS);
         frames_written += bytes_loaded;
         if (err != ESP_OK || bytes_loaded == 0)
             break;
@@ -134,7 +137,7 @@ void AudioSinkEsp32Dac::drain()
                          _dac_buffer.data(),
                          std::min<size_t>(_dac_buffer.size(), 256),
                          &bytes_loaded,
-                         100);
+                         DAC_WRITE_TIMEOUT_MS);
     vTaskDelay(pdMS_TO_TICKS(20));
 #endif
 }
