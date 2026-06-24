@@ -1,8 +1,20 @@
 
 #include "samlib.h"
 
+#ifdef BUILD_ATARI
+#include <array>
+#include <string>
+#ifndef ESP_PLATFORM
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+#endif
+#endif
+
 #ifdef ESP_PLATFORM
   #include <freertos/FreeRTOS.h>
+  #include <freertos/semphr.h>
+  #include <freertos/task.h>
   #include <freertos/timers.h>
   #include <driver/gpio.h>
   #ifndef CONFIG_IDF_TARGET_ESP32S3
@@ -30,6 +42,160 @@ int debug = 0;
 const uint32_t sample_rate = 22050;//110000l;
 
 #ifdef BUILD_ATARI
+namespace
+{
+constexpr size_t SAM_ASYNC_MAX_ARGS = 20;
+constexpr size_t SAM_ASYNC_QUEUE_DEPTH = 8;
+
+struct SamAsyncRequest
+{
+    int argc = 0;
+    std::array<std::string, SAM_ASYNC_MAX_ARGS> args;
+};
+
+std::array<SamAsyncRequest, SAM_ASYNC_QUEUE_DEPTH> sam_async_queue;
+size_t sam_async_head = 0;
+size_t sam_async_tail = 0;
+size_t sam_async_count = 0;
+
+bool sam_async_pop(SamAsyncRequest *request);
+void sam_async_worker();
+
+#ifdef ESP_PLATFORM
+SemaphoreHandle_t sam_async_mutex = nullptr;
+TaskHandle_t sam_async_task = nullptr;
+
+void sam_async_lock()
+{
+    if (sam_async_mutex == nullptr)
+        sam_async_mutex = xSemaphoreCreateMutex();
+    xSemaphoreTake(sam_async_mutex, portMAX_DELAY);
+}
+
+void sam_async_unlock()
+{
+    xSemaphoreGive(sam_async_mutex);
+}
+
+void sam_async_task_entry(void *)
+{
+    sam_async_worker();
+}
+
+bool sam_async_ensure_worker()
+{
+    if (sam_async_task != nullptr)
+        return true;
+    return xTaskCreatePinnedToCore(sam_async_task_entry, "samSynth", 8192, nullptr, 4, &sam_async_task, 0) == pdPASS;
+}
+#else
+std::mutex sam_async_mutex;
+std::condition_variable sam_async_wake;
+std::thread sam_async_thread;
+bool sam_async_started = false;
+
+void sam_async_lock()
+{
+    sam_async_mutex.lock();
+}
+
+void sam_async_unlock()
+{
+    sam_async_mutex.unlock();
+}
+
+bool sam_async_ensure_worker()
+{
+    if (!sam_async_started)
+    {
+        sam_async_started = true;
+        sam_async_thread = std::thread(sam_async_worker);
+        sam_async_thread.detach();
+    }
+    return true;
+}
+#endif
+
+void sam_async_run_request(SamAsyncRequest &request)
+{
+    std::array<char *, SAM_ASYNC_MAX_ARGS> argv = {};
+    for (int i = 0; i < request.argc; ++i)
+        argv[i] = const_cast<char *>(request.args[i].c_str());
+    sam(request.argc, argv.data());
+}
+
+bool sam_async_pop(SamAsyncRequest *request)
+{
+#ifdef ESP_PLATFORM
+    sam_async_lock();
+    if (sam_async_count == 0)
+    {
+        sam_async_unlock();
+        return false;
+    }
+#else
+    std::unique_lock<std::mutex> lock(sam_async_mutex);
+    sam_async_wake.wait(lock, [] { return sam_async_count != 0; });
+#endif
+
+    *request = sam_async_queue[sam_async_head];
+    sam_async_queue[sam_async_head] = SamAsyncRequest();
+    sam_async_head = (sam_async_head + 1) % SAM_ASYNC_QUEUE_DEPTH;
+    --sam_async_count;
+
+#ifdef ESP_PLATFORM
+    sam_async_unlock();
+#endif
+    return true;
+}
+
+void sam_async_worker()
+{
+    SamAsyncRequest request;
+    for (;;)
+    {
+        if (sam_async_pop(&request))
+            sam_async_run_request(request);
+#ifdef ESP_PLATFORM
+        else
+            vTaskDelay(pdMS_TO_TICKS(10));
+#endif
+    }
+}
+}
+
+bool sam_async(int argc, char **argv)
+{
+    if (argc <= 0 || argc > static_cast<int>(SAM_ASYNC_MAX_ARGS) || argv == nullptr)
+        return false;
+
+    SamAsyncRequest request;
+    request.argc = argc;
+    for (int i = 0; i < argc; ++i)
+    {
+        if (argv[i] == nullptr)
+            return false;
+        request.args[i] = argv[i];
+    }
+
+    sam_async_lock();
+    const bool worker_ready = sam_async_ensure_worker();
+    const bool can_queue = worker_ready && sam_async_count < SAM_ASYNC_QUEUE_DEPTH;
+    if (can_queue)
+    {
+        sam_async_queue[sam_async_tail] = request;
+        sam_async_tail = (sam_async_tail + 1) % SAM_ASYNC_QUEUE_DEPTH;
+        ++sam_async_count;
+    }
+    sam_async_unlock();
+
+#ifndef ESP_PLATFORM
+    if (can_queue)
+        sam_async_wake.notify_one();
+#endif
+    return can_queue;
+}
+
 static bool OutputSamViaAudioService()
 {
     const int sample_count = GetBufferLength() / 50;

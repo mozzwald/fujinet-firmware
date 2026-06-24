@@ -1347,7 +1347,7 @@ remain deferred while SAM is migrated onto the shared audio path.
 - [x] Refactor SAM so speech generation can emit PCM without directly opening
       an output device.
 - [x] Add a SAM PCM source or enqueue generated SAM PCM into `AudioService`.
-- [ ] Separate SAM synthesis from `OutputSound()` so generated samples can be
+- [x] Separate SAM synthesis from `OutputSound()` so generated samples can be
       handed to `AudioService` without blocking the SIO voice-device command
       path.
 - [x] Replace or wrap SAM's current global generated-sample buffer lifecycle
@@ -1378,20 +1378,28 @@ remain deferred while SAM is migrated onto the shared audio path.
 
 Implementation note:
 
-Atari SAM now hands each generated 8-bit sample buffer to `audioDev`, which
-copies and converts it into owned signed 16-bit mono PCM before queueing a
-`PLAY_PCM` command on `AudioService`. SAM uses the generated-PCM append path:
-the first SAM chunk interrupts any active non-SAM source using the current Phase
-1 generation/cancel behavior, while later SAM chunks for the same utterance
-reuse the active SAM generation and remain FIFO queued instead of cancelling the
-chunk currently playing. `AudioService` then opens the active `AudioSink` and
-drains each PCM chunk in the same worker path used by other audio commands. This
-keeps Atari SAM from directly owning DAC/I2S/miniaudio output. True overlay
-mixing remains a future mixer task. SAM synthesis itself still runs
-synchronously before each PCM chunk is queued, so the remaining blocking item
-above is about moving generation off the SIO command path, not about playback
-duration. Legacy SAM direct-output code is still present for non-Atari paths and
-should be removed or wrapped once those targets are migrated.
+Atari SAM requests now enter a bounded `samlib` synthesis queue before running
+SAM itself. The SIO P3: voice device preserves the existing printer-style command
+behavior, parameter parsing, and EOL-triggered utterance semantics, but it copies
+the completed SAM argument list into the queue and completes the SIO command
+without waiting for synthesis. Internal Atari callers such as disk-rotation
+announcements use the same queued path through `util_sam_say()`.
+
+A single `samSynth` worker drains the queued requests serially because the SAM
+library still uses global synthesis state. The worker runs the existing `sam()`
+entry point outside the SIO command path. After `SAMMain()` generates the 8-bit
+sample buffer, Atari `OutputSound()` hands the buffer to `audioDev`, which copies
+and converts it into owned signed 16-bit mono PCM before queueing a `PLAY_PCM`
+command on `AudioService`. SAM uses the generated-PCM append path: the first SAM
+chunk interrupts any active non-SAM source using the current Phase 1
+generation/cancel behavior, while later SAM chunks for the same utterance reuse
+the active SAM generation and remain FIFO queued instead of cancelling the chunk
+currently playing. `AudioService` then opens the active `AudioSink` and drains
+each PCM chunk in the same worker path used by other audio commands. This keeps
+Atari SAM from directly owning DAC/I2S/miniaudio output and keeps SAM synthesis
+off the SIO service path. True overlay mixing remains a future mixer task.
+Legacy SAM direct-output code is still present for non-Atari paths and should be
+removed or wrapped once those targets are migrated.
 
 Disk rotation announcements now use the same path. Generic `fujiDevice`
 rotation logic calls a platform hook after rotating IDs and locating the slot
@@ -1403,7 +1411,7 @@ Exit criteria:
 
 - [ ] SAM speech uses the generic sink.
 - [ ] SAM speech reaches the sink only through `AudioService`.
-- [ ] SAM no longer blocks the SIO service loop for the duration of playback.
+- [x] SAM no longer blocks the SIO service loop for the duration of playback.
 - [ ] Audio-resource arbitration is deterministic and documented.
 - [ ] Future generated-audio devices can follow the SAM producer pattern without
       taking direct ownership of output hardware.

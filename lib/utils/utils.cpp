@@ -845,7 +845,7 @@ void util_sam_say(const char *p,
 
     // Append the phrase to say.
     a[n++] = (char *)p;
-    sam(n, a);
+    sam_async(n, a);
 }
 
 /**

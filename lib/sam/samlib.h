@@ -34,3 +34,7 @@ void OutputSound();
 #endif
 
 int sam(int argc, char **argv);
+
+#ifdef BUILD_ATARI
+bool sam_async(int argc, char **argv);
+#endif

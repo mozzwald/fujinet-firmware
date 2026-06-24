@@ -189,7 +189,7 @@ void sioVoice::sio_sam()
     }
 
     a[n++] = (char *)samBuffer;
-    sam(n, a);
+    sam_async(n, a);
 };
 
 void sioVoice::sio_write()
