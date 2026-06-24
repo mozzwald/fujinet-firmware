@@ -149,16 +149,34 @@ bool sam_async_pop(SamAsyncRequest *request)
     return true;
 }
 
+#ifdef ESP_PLATFORM
+bool sam_async_finish_worker_if_idle()
+{
+    sam_async_lock();
+    if (sam_async_count != 0)
+    {
+        sam_async_unlock();
+        return false;
+    }
+    sam_async_task = nullptr;
+    sam_async_unlock();
+    return true;
+}
+#endif
+
 void sam_async_worker()
 {
     SamAsyncRequest request;
     for (;;)
     {
         if (sam_async_pop(&request))
+        {
             sam_async_run_request(request);
+            continue;
+        }
 #ifdef ESP_PLATFORM
-        else
-            vTaskDelay(pdMS_TO_TICKS(10));
+        if (sam_async_finish_worker_if_idle())
+            vTaskDelete(nullptr);
 #endif
     }
 }

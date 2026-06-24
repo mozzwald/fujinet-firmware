@@ -1387,19 +1387,23 @@ announcements use the same queued path through `util_sam_say()`.
 
 A single `samSynth` worker drains the queued requests serially because the SAM
 library still uses global synthesis state. The worker runs the existing `sam()`
-entry point outside the SIO command path. After `SAMMain()` generates the 8-bit
-sample buffer, Atari `OutputSound()` hands the buffer to `audioDev`, which copies
-and converts it into owned signed 16-bit mono PCM before queueing a `PLAY_PCM`
-command on `AudioService`. SAM uses the generated-PCM append path: the first SAM
-chunk interrupts any active non-SAM source using the current Phase 1
-generation/cancel behavior, while later SAM chunks for the same utterance reuse
-the active SAM generation and remain FIFO queued instead of cancelling the chunk
-currently playing. `AudioService` then opens the active `AudioSink` and drains
-each PCM chunk in the same worker path used by other audio commands. This keeps
-Atari SAM from directly owning DAC/I2S/miniaudio output and keeps SAM synthesis
-off the SIO service path. True overlay mixing remains a future mixer task.
-Legacy SAM direct-output code is still present for non-Atari paths and should be
-removed or wrapped once those targets are migrated.
+entry point outside the SIO command path. On ESP32 firmware, the worker exits
+when the queue drains so its FreeRTOS stack is released back to internal heap;
+do not leave this task parked permanently, because classic ESP32 DAC continuous
+output needs internal DMA-capable memory for its descriptor buffers. After
+`SAMMain()` generates the 8-bit sample buffer, Atari `OutputSound()` hands the
+buffer to `audioDev`, which copies and converts it into owned signed 16-bit mono
+PCM before queueing a `PLAY_PCM` command on `AudioService`. SAM uses the
+generated-PCM append path: the first SAM chunk interrupts any active non-SAM
+source using the current Phase 1 generation/cancel behavior, while later SAM
+chunks for the same utterance reuse the active SAM generation and remain FIFO
+queued instead of cancelling the chunk currently playing. `AudioService` then
+opens the active `AudioSink` and drains each PCM chunk in the same worker path
+used by other audio commands. This keeps Atari SAM from directly owning
+DAC/I2S/miniaudio output and keeps SAM synthesis off the SIO service path. True
+overlay mixing remains a future mixer task. Legacy SAM direct-output code is
+still present for non-Atari paths and should be removed or wrapped once those
+targets are migrated.
 
 Disk rotation announcements now use the same path. Generic `fujiDevice`
 rotation logic calls a platform hook after rotating IDs and locating the slot
