@@ -285,6 +285,16 @@ bool audioDevice::play_sam_pcm(const uint8_t *frames, size_t frame_count, uint32
     return _service.append_u8_pcm(frames, frame_count, sample_rate, AudioSourceKind::SAM);
 }
 
+bool audioDevice::sam_pcm_active() const
+{
+    const AudioStatusSnapshot snapshot = _service.status();
+    return snapshot.source_kind == AudioSourceKind::SAM &&
+           (snapshot.state == AudioState::OPENING ||
+            snapshot.state == AudioState::BUFFERING ||
+            snapshot.state == AudioState::PLAYING ||
+            snapshot.state == AudioState::PAUSED);
+}
+
 void audioDevice::put_basic_status()
 {
     AudioStatusSnapshot status = _service.status();

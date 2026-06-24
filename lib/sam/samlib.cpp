@@ -3,6 +3,9 @@
 
 #ifdef BUILD_ATARI
 #include <array>
+#include <chrono>
+#include <memory>
+#include <new>
 #include <string>
 #ifndef ESP_PLATFORM
 #include <condition_variable>
@@ -53,7 +56,7 @@ struct SamAsyncRequest
     std::array<std::string, SAM_ASYNC_MAX_ARGS> args;
 };
 
-std::array<SamAsyncRequest, SAM_ASYNC_QUEUE_DEPTH> sam_async_queue;
+std::array<SamAsyncRequest *, SAM_ASYNC_QUEUE_DEPTH> sam_async_queue = {};
 size_t sam_async_head = 0;
 size_t sam_async_tail = 0;
 size_t sam_async_count = 0;
@@ -86,7 +89,7 @@ bool sam_async_ensure_worker()
 {
     if (sam_async_task != nullptr)
         return true;
-    return xTaskCreatePinnedToCore(sam_async_task_entry, "samSynth", 8192, nullptr, 4, &sam_async_task, 0) == pdPASS;
+    return xTaskCreatePinnedToCore(sam_async_task_entry, "samSynth", 8192, nullptr, 1, &sam_async_task, 0) == pdPASS;
 }
 #else
 std::mutex sam_async_mutex;
@@ -119,9 +122,17 @@ bool sam_async_ensure_worker()
 void sam_async_run_request(SamAsyncRequest &request)
 {
     std::array<char *, SAM_ASYNC_MAX_ARGS> argv = {};
+    int argc = 0;
     for (int i = 0; i < request.argc; ++i)
-        argv[i] = const_cast<char *>(request.args[i].c_str());
-    sam(request.argc, argv.data());
+    {
+        if (request.args[i] == "-debug")
+            continue;
+        argv[argc++] = const_cast<char *>(request.args[i].c_str());
+    }
+
+    debug = 0;
+    sam(argc, argv.data());
+    debug = 0;
 }
 
 bool sam_async_pop(SamAsyncRequest *request)
@@ -138,14 +149,19 @@ bool sam_async_pop(SamAsyncRequest *request)
     sam_async_wake.wait(lock, [] { return sam_async_count != 0; });
 #endif
 
-    *request = sam_async_queue[sam_async_head];
-    sam_async_queue[sam_async_head] = SamAsyncRequest();
+    SamAsyncRequest *queued_request = sam_async_queue[sam_async_head];
+    sam_async_queue[sam_async_head] = nullptr;
     sam_async_head = (sam_async_head + 1) % SAM_ASYNC_QUEUE_DEPTH;
     --sam_async_count;
 
 #ifdef ESP_PLATFORM
     sam_async_unlock();
 #endif
+    if (queued_request == nullptr)
+        return false;
+
+    *request = std::move(*queued_request);
+    delete queued_request;
     return true;
 }
 
@@ -187,13 +203,16 @@ bool sam_async(int argc, char **argv)
     if (argc <= 0 || argc > static_cast<int>(SAM_ASYNC_MAX_ARGS) || argv == nullptr)
         return false;
 
-    SamAsyncRequest request;
-    request.argc = argc;
+    std::unique_ptr<SamAsyncRequest> request(new (std::nothrow) SamAsyncRequest());
+    if (!request)
+        return false;
+
+    request->argc = argc;
     for (int i = 0; i < argc; ++i)
     {
         if (argv[i] == nullptr)
             return false;
-        request.args[i] = argv[i];
+        request->args[i] = argv[i];
     }
 
     sam_async_lock();
@@ -201,7 +220,7 @@ bool sam_async(int argc, char **argv)
     const bool can_queue = worker_ready && sam_async_count < SAM_ASYNC_QUEUE_DEPTH;
     if (can_queue)
     {
-        sam_async_queue[sam_async_tail] = request;
+        sam_async_queue[sam_async_tail] = request.release();
         sam_async_tail = (sam_async_tail + 1) % SAM_ASYNC_QUEUE_DEPTH;
         ++sam_async_count;
     }
@@ -221,9 +240,26 @@ static bool OutputSamViaAudioService()
     if (sam_buffer == nullptr || sample_count <= 0)
         return false;
 
-    return audioDev.play_sam_pcm(reinterpret_cast<const uint8_t *>(sam_buffer),
-                                 static_cast<size_t>(sample_count),
-                                 sample_rate);
+    if (!audioDev.play_sam_pcm(reinterpret_cast<const uint8_t *>(sam_buffer),
+                               static_cast<size_t>(sample_count),
+                               sample_rate))
+    {
+        return false;
+    }
+
+    const uint32_t timeout_ms =
+        static_cast<uint32_t>((static_cast<uint64_t>(sample_count) * 1000) / sample_rate) + 1000;
+    uint32_t waited_ms = 0;
+    while (audioDev.sam_pcm_active() && waited_ms < timeout_ms)
+    {
+#ifdef ESP_PLATFORM
+        vTaskDelay(pdMS_TO_TICKS(10));
+#else
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+#endif
+        waited_ms += 10;
+    }
+    return true;
 }
 #endif
 

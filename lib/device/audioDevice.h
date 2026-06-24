@@ -46,6 +46,7 @@ public:
     void audiocmd_get_metadata(uint8_t field_id, uint16_t requested_length);
     void audiocmd_seek();
     bool play_sam_pcm(const uint8_t *frames, size_t frame_count, uint32_t sample_rate);
+    bool sam_pcm_active() const;
 
 protected:
     AudioSinkNull _null_sink;
