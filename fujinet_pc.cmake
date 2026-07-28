@@ -4,6 +4,18 @@
 cmake_minimum_required(VERSION 3.4...3.22)
 project(fujinet-pc)
 
+option(FUJINET_ANDROID "Build FujiNet-PC as an Android shared library" OFF)
+set(FUJINET_ANDROID_ENTRY "" CACHE FILEPATH "Android host entry source")
+
+if(FUJINET_ANDROID)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
+        message(FATAL_ERROR "FUJINET_ANDROID requires the Android CMake toolchain")
+    endif()
+    if(NOT FUJINET_ANDROID_ENTRY OR NOT EXISTS "${FUJINET_ANDROID_ENTRY}")
+        message(FATAL_ERROR "FUJINET_ANDROID_ENTRY must name an existing Android host entry source")
+    endif()
+endif()
+
 # C++ standard
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -499,7 +511,12 @@ else()
     set(SOURCES ${SOURCES} lib/compat/strlcat.c lib/compat/strlcpy.c)
 endif()
 
-add_executable(fujinet ${SOURCES})
+if(FUJINET_ANDROID)
+    add_library(fujinet SHARED ${SOURCES} "${FUJINET_ANDROID_ENTRY}")
+    target_compile_definitions(fujinet PRIVATE FUJINET_ANDROID=1)
+else()
+    add_executable(fujinet ${SOURCES})
+endif()
 
 # Explicitly link dl for Linux (needed for dlopen/dlsym/dlclose)
 if(UNIX AND NOT APPLE)
@@ -526,13 +543,32 @@ option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 # - to use library package (Ubuntu deb package is old, does not support cmake/find_package)
 # find_package(MbedTLS)
 # - try to find necessary files in system ...
-set(_MBEDTLS_ROOT_HINTS $ENV{MBEDTLS_ROOT_DIR} ${MBEDTLS_ROOT_DIR})
-set(_MBEDTLS_ROOT_PATHS "$ENV{PROGRAMFILES}/libmbedtls")
-set(_MBEDTLS_ROOT_HINTS_AND_PATHS HINTS ${_MBEDTLS_ROOT_HINTS} PATHS ${_MBEDTLS_ROOT_PATHS})
-find_library(MBEDTLS_STATIC_LIB libmbedtls.a HINTS ${_MBEDTLS_ROOT_HINTS_AND_PATHS})
-find_library(MBEDX509_STATIC_LIB libmbedx509.a HINTS ${_MBEDTLS_ROOT_HINTS_AND_PATHS})
-find_library(MBEDCRYPTO_STATIC_LIB libmbedcrypto.a HINTS ${_MBEDTLS_ROOT_HINTS_AND_PATHS})
-find_path(MBEDTLS_INCLUDE_DIR mbedtls/ssl.h HINTS ${_MBEDTLS_ROOT_HINTS_AND_PATHS} PATH_SUFFIXES include)
+if(FUJINET_ANDROID)
+    if(NOT MBEDTLS_ROOT_DIR)
+        message(FATAL_ERROR "MBEDTLS_ROOT_DIR is required for FUJINET_ANDROID")
+    endif()
+    set(MBEDTLS_STATIC_LIB "${MBEDTLS_ROOT_DIR}/lib/libmbedtls.a")
+    set(MBEDX509_STATIC_LIB "${MBEDTLS_ROOT_DIR}/lib/libmbedx509.a")
+    set(MBEDCRYPTO_STATIC_LIB "${MBEDTLS_ROOT_DIR}/lib/libmbedcrypto.a")
+    set(MBEDTLS_INCLUDE_DIR "${MBEDTLS_ROOT_DIR}/include")
+    foreach(MBEDTLS_REQUIRED_PATH
+            "${MBEDTLS_STATIC_LIB}"
+            "${MBEDX509_STATIC_LIB}"
+            "${MBEDCRYPTO_STATIC_LIB}"
+            "${MBEDTLS_INCLUDE_DIR}/mbedtls/ssl.h")
+        if(NOT EXISTS "${MBEDTLS_REQUIRED_PATH}")
+            message(FATAL_ERROR "Required Android Mbed TLS path is missing: ${MBEDTLS_REQUIRED_PATH}")
+        endif()
+    endforeach()
+else()
+    set(_MBEDTLS_ROOT_HINTS $ENV{MBEDTLS_ROOT_DIR} ${MBEDTLS_ROOT_DIR})
+    set(_MBEDTLS_ROOT_PATHS "$ENV{PROGRAMFILES}/libmbedtls")
+    set(_MBEDTLS_ROOT_HINTS_AND_PATHS HINTS ${_MBEDTLS_ROOT_HINTS} PATHS ${_MBEDTLS_ROOT_PATHS})
+    find_library(MBEDTLS_STATIC_LIB libmbedtls.a HINTS ${_MBEDTLS_ROOT_HINTS_AND_PATHS})
+    find_library(MBEDX509_STATIC_LIB libmbedx509.a HINTS ${_MBEDTLS_ROOT_HINTS_AND_PATHS})
+    find_library(MBEDCRYPTO_STATIC_LIB libmbedcrypto.a HINTS ${_MBEDTLS_ROOT_HINTS_AND_PATHS})
+    find_path(MBEDTLS_INCLUDE_DIR mbedtls/ssl.h HINTS ${_MBEDTLS_ROOT_HINTS_AND_PATHS} PATH_SUFFIXES include)
+endif()
 
 set(CRYPTO_LIBS ${MBEDTLS_STATIC_LIB} ${MBEDX509_STATIC_LIB} ${MBEDCRYPTO_STATIC_LIB})
 
@@ -581,7 +617,20 @@ add_subdirectory(components_pc/libsmb2)
 # - FujiNet (platfomio/ESP32) port
 # add_subdirectory(lib/libssh)
 # - Regular elease
+if(FUJINET_ANDROID)
+    set(WITH_MBEDTLS ON CACHE BOOL "" FORCE)
+endif()
 add_subdirectory(components_pc/libssh)
+
+# Android does not provide a system expat package to CMake.
+if(FUJINET_ANDROID)
+    set(EXPAT_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+    set(EXPAT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(EXPAT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(EXPAT_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+    set(EXPAT_BUILD_PKGCONFIG OFF CACHE BOOL "" FORCE)
+    add_subdirectory(components/expat/expat/expat)
+endif()
 
 # libnfs
 # https://github.com/sahlberg/libnfs
@@ -593,7 +642,15 @@ add_library(gumbo_fn STATIC ${GUMBO_SOURCES})
 target_include_directories(gumbo_fn PUBLIC ${CMAKE_SOURCE_DIR}/components/gumbo)
 target_compile_options(gumbo_fn PRIVATE -w) # vendored third-party; suppress its warnings
 
-target_link_libraries(fujinet pthread expat cjson cjson_utils smb2 ssh nfs gumbo_fn)
+if(FUJINET_ANDROID)
+    find_library(ANDROID_LOG_LIBRARY log)
+    if(NOT ANDROID_LOG_LIBRARY)
+        message(FATAL_ERROR "Android log library was not found")
+    endif()
+    target_link_libraries(fujinet expat cjson cjson_utils smb2 ssh nfs gumbo_fn ${ANDROID_LOG_LIBRARY})
+else()
+    target_link_libraries(fujinet pthread expat cjson cjson_utils smb2 ssh nfs gumbo_fn)
+endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     target_link_libraries(fujinet ws2_32 bcrypt)

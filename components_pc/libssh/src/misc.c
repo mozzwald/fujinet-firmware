@@ -43,6 +43,9 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#ifndef S_IWRITE
+#define S_IWRITE S_IWUSR
+#endif
 #include <ctype.h>
 #include <time.h>
 #ifdef HAVE_SYS_TIME_H

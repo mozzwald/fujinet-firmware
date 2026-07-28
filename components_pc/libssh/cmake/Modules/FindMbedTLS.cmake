@@ -32,42 +32,49 @@ set(_MBEDTLS_ROOT_HINTS_AND_PATHS
     PATHS ${_MBEDTLS_ROOT_PATHS})
 
 
-find_path(MBEDTLS_INCLUDE_DIR
-    NAMES
-        mbedtls/ssl.h
-    HINTS
-        ${_MBEDTLS_ROOT_HINTS_AND_PATHS}
-    PATH_SUFFIXES
-       include
-)
-
-find_library(MBEDTLS_SSL_LIBRARY
+if(FUJINET_ANDROID AND MBEDTLS_ROOT_DIR)
+    set(MBEDTLS_INCLUDE_DIR "${MBEDTLS_ROOT_DIR}/include")
+    set(MBEDTLS_SSL_LIBRARY "${MBEDTLS_ROOT_DIR}/lib/libmbedtls.a")
+    set(MBEDTLS_CRYPTO_LIBRARY "${MBEDTLS_ROOT_DIR}/lib/libmbedcrypto.a")
+    set(MBEDTLS_X509_LIBRARY "${MBEDTLS_ROOT_DIR}/lib/libmbedx509.a")
+else()
+    find_path(MBEDTLS_INCLUDE_DIR
         NAMES
-            mbedtls
+            mbedtls/ssl.h
         HINTS
             ${_MBEDTLS_ROOT_HINTS_AND_PATHS}
         PATH_SUFFIXES
-            lib
+           include
+    )
 
-)
+    find_library(MBEDTLS_SSL_LIBRARY
+            NAMES
+                mbedtls
+            HINTS
+                ${_MBEDTLS_ROOT_HINTS_AND_PATHS}
+            PATH_SUFFIXES
+                lib
 
-find_library(MBEDTLS_CRYPTO_LIBRARY
-        NAMES
-            mbedcrypto
-        HINTS
-            ${_MBEDTLS_ROOT_HINTS_AND_PATHS}
-        PATH_SUFFIXES
-            lib
-)
+    )
 
-find_library(MBEDTLS_X509_LIBRARY
-        NAMES
-            mbedx509
-        HINTS
-            ${_MBEDTLS_ROOT_HINTS_AND_PATHS}
-        PATH_SUFFIXES
-            lib
-)
+    find_library(MBEDTLS_CRYPTO_LIBRARY
+            NAMES
+                mbedcrypto
+            HINTS
+                ${_MBEDTLS_ROOT_HINTS_AND_PATHS}
+            PATH_SUFFIXES
+                lib
+    )
+
+    find_library(MBEDTLS_X509_LIBRARY
+            NAMES
+                mbedx509
+            HINTS
+                ${_MBEDTLS_ROOT_HINTS_AND_PATHS}
+            PATH_SUFFIXES
+                lib
+    )
+endif()
 
 set(MBEDTLS_LIBRARIES ${MBEDTLS_SSL_LIBRARY} ${MBEDTLS_CRYPTO_LIBRARY}
         ${MBEDTLS_X509_LIBRARY})

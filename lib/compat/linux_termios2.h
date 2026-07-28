@@ -36,6 +36,7 @@
 #define LINUX_IBSHIFT	16
 #endif
 
+#ifndef __ANDROID__
 struct termios2 {
         tcflag_t c_iflag;               /* input mode flags */
         tcflag_t c_oflag;               /* output mode flags */
@@ -46,6 +47,7 @@ struct termios2 {
         speed_t c_ispeed;               /* input speed */
         speed_t c_ospeed;               /* output speed */
 };
+#endif
 
 #ifndef TCGETS2
 #define TCGETS2 0x2A
@@ -64,4 +66,3 @@ struct termios2 {
 #endif
 
 #endif
-
