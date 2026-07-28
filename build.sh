@@ -386,11 +386,13 @@ if [ ! -z "$PC_TARGET" ] ; then
     exit 1
   fi
 
-  # run unit tests
-  ctest -V --progress
+  # Cross-compiled Android tests cannot execute on the build host.
+  if [ -z "${ANDROID_NDK_HOME:-}" ] ; then
+    ctest -V --progress
     if [ $? -ne 0 ] ; then
-    echo "Error running unit tests. Aborting"
-    exit 1
+      echo "Error running unit tests. Aborting"
+      exit 1
+    fi
   fi
 
   echo "Built PC version in build/dist folder"
