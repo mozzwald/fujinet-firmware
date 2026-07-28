@@ -363,6 +363,18 @@ void OutputSound()
 #else
 // !ESP_PLATFORM
 
+#ifdef FUJINET_ANDROID
+extern "C" void fujinet_android_submit_sam_audio(const unsigned char* audio, int sampleCount, int sampleRate);
+
+void OutputSound()
+{
+    int bufferpos = GetBufferLength() / 50;
+    char *currentBuffer = GetBuffer();
+    if (currentBuffer == NULL || bufferpos <= 0)
+        return;
+    fujinet_android_submit_sam_audio(reinterpret_cast<const unsigned char*>(currentBuffer), bufferpos, sample_rate);
+}
+#else
 static int pos = 0;
 void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
 {
@@ -410,6 +422,7 @@ void OutputSound()
     ma_device_uninit(&device);
 }
 
+#endif
     // end of !ESP_PLATFORM
 #endif
 
