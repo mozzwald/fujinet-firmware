@@ -117,6 +117,7 @@ public:
     bool check_deferred_reboot();
     int request_for_shutdown();
     int check_for_shutdown();
+    void clear_shutdown_request();
 #endif
     uint32_t get_cpu_frequency();
     uint32_t get_free_heap_size();

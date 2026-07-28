@@ -433,6 +433,10 @@ int SystemManager::check_for_shutdown()
 {
     return _shutdown_requests;
 }
+void SystemManager::clear_shutdown_request()
+{
+    _shutdown_requests = 0;
+}
 #endif
 
 /* Size of available heap. Size of largest contiguous block may be smaller.

@@ -365,9 +365,13 @@ int NetSIO::handle_netsio()
                 break;
 
             case NETSIO_COLD_RESET:
+#if defined(FUJINET_ANDROID)
+                Debug_println("NetSIO cold reset ignored in Android runtime; app will restart FujiNet");
+#else
                 // emulator cold reset, do fujinet restart
 #ifndef DEBUG_NO_REBOOT
                 fnSystem.reboot();
+#endif
 #endif
                 break;
 
