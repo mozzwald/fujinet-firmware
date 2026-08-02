@@ -41,6 +41,9 @@
 #elif defined(BUILD_ADAM)
 // AdamNet-over-IP default port (matches ADAMEm's -fujinet default)
 #  define CONFIG_DEFAULT_BOIP_PORT 65216
+#elif defined(BUILD_LYNX)
+// Handy/SDL ComLynx-over-TCP default port.
+#  define CONFIG_DEFAULT_BOIP_PORT 8100
 #else
 // Dev relay over network, used by Apple
 #  define CONFIG_DEFAULT_BOIP_PORT 1985
@@ -495,8 +498,8 @@ private:
     // "bus" over IP
     struct boip_info
     {
-#if defined(BUILD_ADAM) && !defined(ESP_PLATFORM)
-        // ADAM PC build defaults to ADAMEm over IP (no real AdamNet hardware).
+#if (defined(BUILD_ADAM) || defined(BUILD_LYNX)) && !defined(ESP_PLATFORM)
+        // PC builds use their emulator's raw bus-over-IP endpoint by default.
         bool boip_enabled = true;
 #else
         bool boip_enabled = false;

@@ -9,9 +9,14 @@
 #include "global_types.h"
 #include "cmdFrame.h"
 #include "UARTChannel.h"
+#ifndef ESP_PLATFORM
+#include "BoIPChannel.h"
+#endif
 #include "fujiDeviceID.h"
 #include "fujiCommandID.h"
+#ifdef ESP_PLATFORM
 #include <freertos/queue.h>
+#endif
 
 #include <forward_list>
 #include <map>
@@ -126,7 +131,13 @@ private:
     lynxNetwork *_netDev[8] = {nullptr};
     lynxNetStream *_streamDev = nullptr;
 
-    UARTChannel _port;
+    UARTChannel _serial;
+#ifndef ESP_PLATFORM
+    // Handy exposes ComLynx as a raw TCP byte stream.  Keep this separate
+    // from the physical serial port so a PC build can use either transport.
+    BoIPChannel _boip;
+#endif
+    IOChannel *_port = &_serial;
 
     void _comlynx_process_cmd();
     void _comlynx_process_queue();
@@ -144,6 +155,13 @@ public:
      */
     bool wait_for_idle();
     bool netstreamActive() const;
+    bool isBoIP() const {
+#ifndef ESP_PLATFORM
+        return _port == &_boip;
+#else
+        return false;
+#endif
+    }
 
     int numDevices();
     void addDevice(virtualDevice *pDevice, fujiDeviceID_t device_id);
@@ -155,7 +173,9 @@ public:
     virtualDevice *deviceById(fujiDeviceID_t device_id);
     void changeDeviceId(virtualDevice *pDevice, int device_id);
     bool deviceEnabled(fujiDeviceID_t device_id);
+#ifdef ESP_PLATFORM
     QueueHandle_t qComlynxMessages = nullptr;
+#endif
     void setStreamHost(const char *newhost, int port);
     void setStreamHostWithOptions(const char *newhost, int port, int mode, bool register_enabled, bool redeye_enabled);
 
@@ -167,15 +187,15 @@ public:
 
     // Everybody thinks "oh I know how a serial port works, I'll just
     // access it directly and bypass the bus!" ಠ_ಠ
-    size_t read(void *buffer, size_t length) { return _port.read(buffer, length); }
-    size_t read() { return _port.read(); }
-    size_t write(const void *buffer, size_t length) { return _port.write(buffer, length); }
-    size_t write(int n) { return _port.write(n); }
-    size_t available() { return _port.available(); }
-    void flush() { _port.flushOutput(); }
-    size_t print(int n, int base = 10) { return _port.print(n, base); }
-    size_t print(const char *str) { return _port.print(str); }
-    size_t print(const std::string &str) { return _port.print(str); }
+    size_t read(void *buffer, size_t length) { return _port->read(buffer, length); }
+    size_t read() { return _port->read(); }
+    size_t write(const void *buffer, size_t length) { return _port->write(buffer, length); }
+    size_t write(int n) { return _port->write(n); }
+    size_t available() { return _port->available(); }
+    void flush() { _port->flushOutput(); }
+    size_t print(int n, int base = 10) { return _port->print(n, base); }
+    size_t print(const char *str) { return _port->print(str); }
+    size_t print(const std::string &str) { return _port->print(str); }
 };
 
 extern systemBus SYSTEM_BUS;
