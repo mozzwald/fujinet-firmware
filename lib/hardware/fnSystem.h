@@ -117,6 +117,11 @@ public:
     bool check_deferred_reboot();
     int request_for_shutdown();
     int check_for_shutdown();
+    // Embedded in a host process the runtime can be stopped and started again
+    // without the process ending, and the shutdown counter is a global that
+    // would still be set from the previous run - making the next service loop
+    // exit immediately instead of starting.
+    void clear_shutdown_request();
 #endif
     uint32_t get_cpu_frequency();
     uint32_t get_free_heap_size();
