@@ -534,7 +534,16 @@ else()
     set(SOURCES ${SOURCES} lib/compat/strlcat.c lib/compat/strlcpy.c)
 endif()
 
-add_executable(fujinet ${SOURCES})
+# On Android the runtime is loaded into a host app rather than run as its own
+# process, so it is built as a shared library with a small entry shim standing
+# in for main(). Everything else about the PC build applies unchanged.
+if(FUJINET_ANDROID)
+    add_library(fujinet SHARED ${SOURCES} android/fujinet_android_entry.cpp)
+    set_target_properties(fujinet PROPERTIES OUTPUT_NAME "fujinet")
+    target_compile_definitions(fujinet PRIVATE FUJINET_ANDROID=1)
+else()
+    add_executable(fujinet ${SOURCES})
+endif()
 
 # Explicitly link dl for Linux (needed for dlopen/dlsym/dlclose)
 if(UNIX AND NOT APPLE)
@@ -561,13 +570,24 @@ option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 # - to use library package (Ubuntu deb package is old, does not support cmake/find_package)
 # find_package(MbedTLS)
 # - try to find necessary files in system ...
-set(_MBEDTLS_ROOT_HINTS $ENV{MBEDTLS_ROOT_DIR} ${MBEDTLS_ROOT_DIR})
-set(_MBEDTLS_ROOT_PATHS "$ENV{PROGRAMFILES}/libmbedtls")
-set(_MBEDTLS_ROOT_HINTS_AND_PATHS HINTS ${_MBEDTLS_ROOT_HINTS} PATHS ${_MBEDTLS_ROOT_PATHS})
-find_library(MBEDTLS_STATIC_LIB libmbedtls.a HINTS ${_MBEDTLS_ROOT_HINTS_AND_PATHS})
-find_library(MBEDX509_STATIC_LIB libmbedx509.a HINTS ${_MBEDTLS_ROOT_HINTS_AND_PATHS})
-find_library(MBEDCRYPTO_STATIC_LIB libmbedcrypto.a HINTS ${_MBEDTLS_ROOT_HINTS_AND_PATHS})
-find_path(MBEDTLS_INCLUDE_DIR mbedtls/ssl.h HINTS ${_MBEDTLS_ROOT_HINTS_AND_PATHS} PATH_SUFFIXES include)
+# Cross-compiling, find_library() is actively dangerous here: it either finds
+# nothing or quietly finds the build host's copy, and an x86-64 libmbedtls.a
+# links into an arm64 target with a very confusing error. When the caller has
+# told us exactly where the per-ABI Mbed TLS lives, use it and do not search.
+if(FUJINET_ANDROID AND DEFINED MBEDTLS_ROOT_DIR)
+    set(MBEDTLS_STATIC_LIB "${MBEDTLS_ROOT_DIR}/lib/libmbedtls.a")
+    set(MBEDX509_STATIC_LIB "${MBEDTLS_ROOT_DIR}/lib/libmbedx509.a")
+    set(MBEDCRYPTO_STATIC_LIB "${MBEDTLS_ROOT_DIR}/lib/libmbedcrypto.a")
+    set(MBEDTLS_INCLUDE_DIR "${MBEDTLS_ROOT_DIR}/include")
+else()
+    set(_MBEDTLS_ROOT_HINTS $ENV{MBEDTLS_ROOT_DIR} ${MBEDTLS_ROOT_DIR})
+    set(_MBEDTLS_ROOT_PATHS "$ENV{PROGRAMFILES}/libmbedtls")
+    set(_MBEDTLS_ROOT_HINTS_AND_PATHS HINTS ${_MBEDTLS_ROOT_HINTS} PATHS ${_MBEDTLS_ROOT_PATHS})
+    find_library(MBEDTLS_STATIC_LIB libmbedtls.a HINTS ${_MBEDTLS_ROOT_HINTS_AND_PATHS})
+    find_library(MBEDX509_STATIC_LIB libmbedx509.a HINTS ${_MBEDTLS_ROOT_HINTS_AND_PATHS})
+    find_library(MBEDCRYPTO_STATIC_LIB libmbedcrypto.a HINTS ${_MBEDTLS_ROOT_HINTS_AND_PATHS})
+    find_path(MBEDTLS_INCLUDE_DIR mbedtls/ssl.h HINTS ${_MBEDTLS_ROOT_HINTS_AND_PATHS} PATH_SUFFIXES include)
+endif()
 
 set(CRYPTO_LIBS ${MBEDTLS_STATIC_LIB} ${MBEDX509_STATIC_LIB} ${MBEDCRYPTO_STATIC_LIB})
 
@@ -616,6 +636,12 @@ add_subdirectory(components_pc/libsmb2)
 # - FujiNet (platfomio/ESP32) port
 # add_subdirectory(lib/libssh)
 # - Regular elease
+# libssh picks a crypto backend at configure time and falls back to OpenSSL.
+# Android has no system OpenSSL, but we already build Mbed TLS per ABI for
+# FujiNet itself, so point libssh at the same one instead.
+if(FUJINET_ANDROID)
+    set(WITH_MBEDTLS ON CACHE BOOL "" FORCE)
+endif()
 add_subdirectory(components_pc/libssh)
 
 # libnfs
@@ -628,7 +654,17 @@ add_library(gumbo_fn STATIC ${GUMBO_SOURCES})
 target_include_directories(gumbo_fn PUBLIC ${CMAKE_SOURCE_DIR}/components/gumbo)
 target_compile_options(gumbo_fn PRIVATE -w) # vendored third-party; suppress its warnings
 
-target_link_libraries(fujinet pthread expat cjson cjson_utils smb2 ssh nfs gumbo_fn)
+# bionic folds pthread into libc, so there is no -lpthread to link, and expat
+# has to be built from source rather than picked up from the system.
+if(FUJINET_ANDROID)
+    set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
+    set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    add_subdirectory(components/expat/expat/expat)
+    find_library(ANDROID_LOG_LIB log)
+    target_link_libraries(fujinet expat cjson cjson_utils smb2 ssh nfs gumbo_fn ${ANDROID_LOG_LIB})
+else()
+    target_link_libraries(fujinet pthread expat cjson cjson_utils smb2 ssh nfs gumbo_fn)
+endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     target_link_libraries(fujinet ws2_32 bcrypt)
@@ -695,7 +731,9 @@ else()
         COMMENT "Preparing dist directory"
         COMMAND ${CMAKE_COMMAND} -E make_directory dist
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/distfiles dist
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:fujinet> dist
+        # Android packaging expects the SONAME the app will dlopen, not a bare
+        # "fujinet"; everywhere else the executable keeps its own name.
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:fujinet> $<IF:$<BOOL:${FUJINET_ANDROID}>,dist/libfujinet.so,dist>
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${BUILD_DATA_DIR} dist/data
         COMMAND ${CMAKE_COMMAND} -E remove dist/run-fujinet.bat
         COMMAND ${CMAKE_COMMAND} -E remove dist/run-fujinet.ps1

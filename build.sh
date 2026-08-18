@@ -263,7 +263,7 @@ fi
 if [ -z "${PC_BUILD}" ] ; then
     PIO=$(command -v pio)
     if [ "${PIO}" != "${VENV_ROOT}/bin/pio" ] ; then
-        pip install platformio || exit 1
+        pip install platformio pyyaml jinja2 || exit 1
     fi
 fi
 
@@ -291,6 +291,29 @@ if [ ! -z "$PC_TARGET" ] ; then
   echo "PC Build Mode"
   # lets build_webui.py know we are using the generated INI file, this variable name is the one PIO uses when it calls subprocesses, so we use same name.
   export PROJECT_CONFIG=$INI_FILE
+
+  # Android cross-compile. The PC build is otherwise unchanged: Android is just
+  # another !ESP_PLATFORM host, so it reuses fujinet_pc.cmake wholesale and only
+  # needs the toolchain pointed at the NDK.
+  CMAKE_EXTRA_ARGS=()
+  if [ -n "${ANDROID_NDK_HOME:-}" ] ; then
+    if [ -z "${ANDROID_ABI:-}" ] ; then
+      echo "ANDROID_ABI must be set for Android PC builds"
+      exit 1
+    fi
+    ANDROID_PLATFORM=${ANDROID_PLATFORM:-android-26}
+    CMAKE_EXTRA_ARGS+=(
+      "-DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake"
+      "-DANDROID_ABI=${ANDROID_ABI}"
+      "-DANDROID_PLATFORM=${ANDROID_PLATFORM}"
+      "-DANDROID_STL=c++_static"
+      "-DFUJINET_ANDROID=ON"
+    )
+    if [ -n "${MBEDTLS_ROOT_DIR:-}" ] ; then
+      CMAKE_EXTRA_ARGS+=("-DMBEDTLS_ROOT_DIR=${MBEDTLS_ROOT_DIR}")
+    fi
+  fi
+
   GEN_CMD=""
   if [ -n "$CMAKE_GENERATOR" ] ; then
     GEN_CMD="-G $CMAKE_GENERATOR"
@@ -316,9 +339,9 @@ if [ ! -z "$PC_TARGET" ] ; then
   cd $SCRIPT_DIR/build
   # Write out the compile commands for clangd etc to use
   if [ -z "$GEN_CMD" ]; then
-    cmake .. -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DFUJINET_TARGET=$PC_TARGET "$@"
+    cmake .. "${CMAKE_EXTRA_ARGS[@]}" -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DFUJINET_TARGET=$PC_TARGET "$@"
   else
-    cmake "$GEN_CMD" .. -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DFUJINET_TARGET=$PC_TARGET "$@"
+    cmake "$GEN_CMD" .. "${CMAKE_EXTRA_ARGS[@]}" -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DFUJINET_TARGET=$PC_TARGET "$@"
   fi
   if [ $? -ne 0 ]; then
     echo "cmake failed writing compile commands. Exiting"
@@ -332,9 +355,9 @@ if [ ! -z "$PC_TARGET" ] ; then
 
   echo "Building for $BUILD_TYPE"
   if [ -z "$GEN_CMD" ]; then
-    cmake .. -DFUJINET_TARGET=$PC_TARGET -DCMAKE_BUILD_TYPE=$BUILD_TYPE "$@"
+    cmake .. "${CMAKE_EXTRA_ARGS[@]}" -DFUJINET_TARGET=$PC_TARGET -DCMAKE_BUILD_TYPE=$BUILD_TYPE "$@"
   else
-    cmake "$GEN_CMD" .. -DFUJINET_TARGET=$PC_TARGET -DCMAKE_BUILD_TYPE=$BUILD_TYPE "$@"
+    cmake "$GEN_CMD" .. "${CMAKE_EXTRA_ARGS[@]}" -DFUJINET_TARGET=$PC_TARGET -DCMAKE_BUILD_TYPE=$BUILD_TYPE "$@"
   fi
   if [ $? -ne 0 ] ; then
     echo "Error running initial cmake. Aborting"
