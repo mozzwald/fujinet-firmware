@@ -387,10 +387,17 @@ if [ ! -z "$PC_TARGET" ] ; then
   fi
 
   # run unit tests
-  ctest -V --progress
+  # Cross-compiling for Android these are aarch64 binaries and the host cannot
+  # execute them, so ctest would fail on the linker rather than on anything
+  # being wrong. Skip them; they are run by the native build.
+  if [ -n "${ANDROID_NDK_HOME:-}" ] ; then
+    echo "Skipping unit tests: cross-compiled binaries cannot run on the build host"
+  else
+    ctest -V --progress
     if [ $? -ne 0 ] ; then
-    echo "Error running unit tests. Aborting"
-    exit 1
+      echo "Error running unit tests. Aborting"
+      exit 1
+    fi
   fi
 
   echo "Built PC version in build/dist folder"
