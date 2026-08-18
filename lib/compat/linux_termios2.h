@@ -36,6 +36,10 @@
 #define LINUX_IBSHIFT	16
 #endif
 
+/* This header exists because glibc omits struct termios2. bionic does not:
+   Android's <linux/termios.h> already declares it, so declaring it again is a
+   redefinition error rather than a helpful fallback. */
+#ifndef __ANDROID__
 struct termios2 {
         tcflag_t c_iflag;               /* input mode flags */
         tcflag_t c_oflag;               /* output mode flags */
@@ -46,6 +50,7 @@ struct termios2 {
         speed_t c_ispeed;               /* input speed */
         speed_t c_ospeed;               /* output speed */
 };
+#endif
 
 #ifndef TCGETS2
 #define TCGETS2 0x2A
