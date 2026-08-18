@@ -32,6 +32,17 @@ set(_MBEDTLS_ROOT_HINTS_AND_PATHS
     PATHS ${_MBEDTLS_ROOT_PATHS})
 
 
+# Cross-compiling, find_library() searches the build host's library paths, so
+# it either finds nothing or finds the host's own Mbed TLS - which then fails
+# to link against a foreign-architecture target with a thoroughly misleading
+# error. When the caller has named the per-ABI install prefix, believe it.
+if(DEFINED MBEDTLS_ROOT_DIR AND EXISTS "${MBEDTLS_ROOT_DIR}/include/mbedtls/ssl.h")
+    set(MBEDTLS_INCLUDE_DIR "${MBEDTLS_ROOT_DIR}/include")
+    set(MBEDTLS_SSL_LIBRARY "${MBEDTLS_ROOT_DIR}/lib/libmbedtls.a")
+    set(MBEDTLS_CRYPTO_LIBRARY "${MBEDTLS_ROOT_DIR}/lib/libmbedcrypto.a")
+    set(MBEDTLS_X509_LIBRARY "${MBEDTLS_ROOT_DIR}/lib/libmbedx509.a")
+else()
+
 find_path(MBEDTLS_INCLUDE_DIR
     NAMES
         mbedtls/ssl.h
@@ -68,6 +79,8 @@ find_library(MBEDTLS_X509_LIBRARY
         PATH_SUFFIXES
             lib
 )
+
+endif()
 
 set(MBEDTLS_LIBRARIES ${MBEDTLS_SSL_LIBRARY} ${MBEDTLS_CRYPTO_LIBRARY}
         ${MBEDTLS_X509_LIBRARY})
