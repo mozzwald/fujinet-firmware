@@ -23,6 +23,10 @@ enum fujiCommandID_t : uint8_t {
     FUJICMD_WRITE_HOST_SLOTS           = 0xF3,
     FUJICMD_READ_DEVICE_SLOTS          = 0xF2,
     FUJICMD_WRITE_DEVICE_SLOTS         = 0xF1,
+    // Stage the image mounted in a device slot to a local file the host
+    // emulator can boot, instead of streaming it over the bus a block at
+    // a time. Emulator-only; real hardware writes to a flash cart.
+    FUJICMD_STAGE_MOUNTED_IMAGE        = 0x27,
     FUJICMD_ENABLE_UDPSTREAM           = 0xF0,
     FUJICMD_SET_BAUDRATE               = 0xEB,
     FUJICMD_GET_WIFI_ENABLED           = 0xEA,

@@ -6,6 +6,10 @@
 #include <PSRAMAllocator.h>
 #endif /* ESP_PLATFORM */
 
+// Where a mounted image is staged for a host emulator to pick up. Relative
+// to the runtime working directory, alongside its config and SD tree.
+#define STAGED_IMAGE_FILENAME "staged-image.lnx"
+
 #define IMAGE_EXTENSION ".lnx"
 #define COPY_SIZE 532
 
@@ -267,6 +271,90 @@ void lynxFuji::fujicmd_enable_netstream(int port, size_t host_payload_len)
     SYSTEM_BUS.setStreamHostWithOptions(host_out, port, stream_mode, register_enabled, redeye_enabled);
 }
 
+/**
+ * Copy the image mounted in a device slot to a fixed local file, so a host
+ * emulator can load it as a cartridge directly.
+ *
+ * On real hardware the config cartridge streams the image over the bus a
+ * 1024-byte block at a time and programs it into a flash cart. Under emulation
+ * the emulator *is* the cart, and the bus round trip buys nothing - but the
+ * image still has to come through here, because the host it lives on may be
+ * TNFS or anything else only this side can reach.
+ *
+ * Written to a temporary name and renamed, so the emulator either sees a whole
+ * image or no image at all.
+ */
+void lynxFuji::fujicmd_stage_mounted_image(uint8_t deviceSlot)
+{
+    SYSTEM_BUS.transaction_accept(TRANS_STATE::NO_GET);
+
+    if (deviceSlot >= MAX_DISK_DEVICES)
+    {
+        Debug_printf("STAGE IMAGE: bad device slot %u\n", deviceSlot);
+        SYSTEM_BUS.transaction_error();
+        return;
+    }
+
+    fujiDisk &disk = _fnDisks[deviceSlot];
+    if (disk.fileh == nullptr)
+    {
+        Debug_printf("STAGE IMAGE: nothing mounted in slot %u\n", deviceSlot);
+        SYSTEM_BUS.transaction_error();
+        return;
+    }
+
+    const char *staged = STAGED_IMAGE_FILENAME;
+    const char *pending = STAGED_IMAGE_FILENAME ".part";
+
+    FILE *out = fopen(pending, "wb");
+    if (out == nullptr)
+    {
+        Debug_printf("STAGE IMAGE: cannot open %s\n", pending);
+        SYSTEM_BUS.transaction_error();
+        return;
+    }
+
+    // Rewind rather than assuming: the cartridge may already have read blocks
+    // from this handle before deciding to boot it.
+    fnio::fseek(disk.fileh, 0, SEEK_SET);
+
+    uint8_t buffer[4096];
+    size_t total = 0;
+    size_t got;
+    bool failed = false;
+    while ((got = fnio::fread(buffer, 1, sizeof(buffer), disk.fileh)) > 0)
+    {
+        if (fwrite(buffer, 1, got, out) != got)
+        {
+            failed = true;
+            break;
+        }
+        total += got;
+    }
+    fclose(out);
+
+    if (failed || total == 0)
+    {
+        Debug_printf("STAGE IMAGE: write failed after %u bytes\n", (unsigned) total);
+        remove(pending);
+        SYSTEM_BUS.transaction_error();
+        return;
+    }
+
+    remove(staged);
+    if (rename(pending, staged) != 0)
+    {
+        Debug_printf("STAGE IMAGE: cannot rename %s\n", pending);
+        remove(pending);
+        SYSTEM_BUS.transaction_error();
+        return;
+    }
+
+    Debug_printf("STAGE IMAGE: %s staged as %s (%u bytes)\n",
+                 disk.filename, staged, (unsigned) total);
+    SYSTEM_BUS.transaction_success();
+}
+
 void lynxFuji::comlynx_process(const FujiLynxPacket &packet)
 {
     Debug_printf("lynxFuji::process - command: %02X\n", packet.command());
@@ -369,6 +457,9 @@ void lynxFuji::comlynx_process(const FujiLynxPacket &packet)
             uint8_t dest = packet.param(1);
             fujicmd_copy_file_success(source, dest, packet.dataAsString()->c_str());
         }
+        break;
+    case FUJICMD_STAGE_MOUNTED_IMAGE:
+        fujicmd_stage_mounted_image(packet.param(0));
         break;
     case FUJICMD_ENABLE_UDPSTREAM:
         {
