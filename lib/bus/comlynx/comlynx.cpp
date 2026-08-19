@@ -182,6 +182,13 @@ void systemBus::shutdown()
         devicep->shutdown();
     }
     Debug_printf("All devices shut down.\n");
+
+    // Leave nothing behind for a restart to trip over; the devices themselves
+    // outlive the bus, so re-registering them is setup()'s job.
+    _daisyChain.clear();
+    _activeDev = nullptr;
+    _streamDev = nullptr;
+    _printerDev = nullptr;
 }
 
 void systemBus::addDevice(virtualDevice *pDevice, fujiDeviceID_t device_id)
@@ -206,6 +213,14 @@ void systemBus::addDevice(virtualDevice *pDevice, fujiDeviceID_t device_id)
     }
 
     pDevice->_devnum = device_id;
+
+    // Register once. The bus and the devices are all globals, so a runtime
+    // restart inside one process (an emulator front end resetting the session)
+    // runs setup() again over the same objects. A second copy in the chain
+    // means every packet is dispatched - and ACKed - twice, which desyncs the
+    // client: the config cartridge sees replies it never asked for and reports
+    // "Error mounting host".
+    _daisyChain.remove(pDevice);
     _daisyChain.push_front(pDevice);
 }
 
