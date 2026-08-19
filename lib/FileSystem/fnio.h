@@ -3,9 +3,11 @@
 
 #include <cstddef>
 
-#if defined(BUILD_ATARI) || defined(BUILD_APPLE) || defined(BUILD_COCO) || defined(BUILD_RS232) || (defined(BUILD_ADAM) && !defined(ESP_PLATFORM))
+#if defined(BUILD_ATARI) || defined(BUILD_APPLE) || defined(BUILD_COCO) || defined(BUILD_RS232) || (defined(BUILD_ADAM) && !defined(ESP_PLATFORM)) || (defined(BUILD_LYNX) && !defined(ESP_PLATFORM))
   // ATARI and APPLE was already ported to use fnio
   // ADAM uses fnio on PC only (TNFS needs FileHandler); ESP ADAM keeps stdio.
+  // LYNX likewise: with stdio its hosts are limited to local files, so
+  // mounting anything from TNFS fails.
   // set FNIO_IS_STDIO to force stdio
 
   // for testing/debugging, it is possible to switch to stdio

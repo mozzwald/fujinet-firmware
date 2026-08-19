@@ -1,6 +1,7 @@
 #ifdef BUILD_LYNX
 
 #include "mediaType.h"
+#include "fnio.h"
 
 #include <cstdint>
 #include <cstring>
@@ -30,7 +31,7 @@ void MediaType::unmount()
 {
     if (_media_fileh != nullptr)
     {
-        fclose(_media_fileh);
+        fnio::fclose(_media_fileh);
         _media_fileh = nullptr;
     }
 }

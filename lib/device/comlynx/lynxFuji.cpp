@@ -154,12 +154,12 @@ void lynxFuji::comlynx_new_disk(const FujiLynxPacket &packet)
     disk.access_mode = DISK_ACCESS_MODE_WRITE;
     strlcpy(disk.filename, (const char *)ptr, sizeof(disk.filename));
 
-    disk.fileh = host.file_open(disk.filename, disk.filename, sizeof(disk.filename), "w");
+    disk.fileh = host.fnfile_open(disk.filename, disk.filename, sizeof(disk.filename), "w");
 
     Debug_printf("Creating file %s on host slot %u mounting in disk slot %u numblocks: %lu\n", disk.filename, hs, ds, (long unsigned) numBlocks);
 
     disk.disk_dev.write_blank(disk.fileh, numBlocks);
-    fclose(disk.fileh);
+    fnio::fclose(disk.fileh);
 
     SYSTEM_BUS.transaction_success();
 }

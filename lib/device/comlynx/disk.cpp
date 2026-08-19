@@ -1,6 +1,7 @@
 #ifdef BUILD_LYNX
 
 #include "disk.h"
+#include "fnio.h"
 
 #include <memory.h>
 #include <string.h>
@@ -39,7 +40,7 @@ void lynxDisk::reset()
     }
 }
 
-mediatype_t lynxDisk::mount(FILE *f, const char *filename, uint32_t disksize,
+mediatype_t lynxDisk::mount(fnFile *f, const char *filename, uint32_t disksize,
                             disk_access_flags_t access_mode, mediatype_t disk_type)
 {
     mediatype_t mt = MEDIATYPE_UNKNOWN;
@@ -83,7 +84,7 @@ void lynxDisk::unmount()
     }
 }
 
-error_is_true lynxDisk::write_blank(FILE *fileh, uint32_t numBlocks)
+error_is_true lynxDisk::write_blank(fnFile *fileh, uint32_t numBlocks)
 {
     uint8_t buf[MEDIA_BLOCK_SIZE];
 
@@ -92,7 +93,7 @@ error_is_true lynxDisk::write_blank(FILE *fileh, uint32_t numBlocks)
 
     for (uint32_t b = 0; b < numBlocks; b++)
     {
-        fwrite(buf, 1, MEDIA_BLOCK_SIZE, fileh);
+        fnio::fwrite(buf, 1, MEDIA_BLOCK_SIZE, fileh);
     }
 
     RETURN_SUCCESS_AS_FALSE();

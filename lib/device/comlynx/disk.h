@@ -2,6 +2,7 @@
 #define LYNX_DISK_H
 
 #include "../disk.h"
+#include "fnio.h"
 #include "bus.h"
 #include "global_types.h"
 #include "media.h"
@@ -29,11 +30,11 @@ private:
 
 public:
     lynxDisk();
-    mediatype_t mount(FILE *f, const char *filename, uint32_t disksize,
+    mediatype_t mount(fnFile *f, const char *filename, uint32_t disksize,
                       disk_access_flags_t access_mode,
                       mediatype_t disk_type = MEDIATYPE_UNKNOWN);
     void unmount();
-    error_is_true write_blank(FILE *f, uint32_t numBlocks);
+    error_is_true write_blank(fnFile *f, uint32_t numBlocks);
     virtual void reset() override;
 
     mediatype_t mediatype() { return _media == nullptr ? MEDIATYPE_UNKNOWN : _media->_mediatype; };

@@ -1,6 +1,7 @@
 #ifdef BUILD_LYNX
 
 #include "mediaTypeROM.h"
+#include "fnio.h"
 
 #include <cstdint>
 #include <cstring>
@@ -37,12 +38,12 @@ error_is_true MediaTypeROM::read(uint32_t blockNum, uint16_t *readcount)
      if (_media_last_block == INVALID_SECTOR_VALUE || blockNum != _media_last_block + 1)
      {
         uint32_t offset = _block_to_offset(blockNum);
-        err = fseek(_media_fileh, offset, SEEK_SET) != 0;
+        err = fnio::fseek(_media_fileh, offset, SEEK_SET) != 0;
         _media_last_block = INVALID_SECTOR_VALUE;
      }
 
     if (err == false)
-        err = fread(_media_blockbuff, 1, MEDIA_BLOCK_SIZE, _media_fileh) == 0;            // handle potential last block partial read
+        err = fnio::fread(_media_blockbuff, 1, MEDIA_BLOCK_SIZE, _media_fileh) == 0;            // handle potential last block partial read
 
     if (err == false)
     {
@@ -77,7 +78,7 @@ error_is_true MediaTypeROM::format(uint16_t *responsesize)
     RETURN_ERROR_AS_TRUE();
 }
 
-mediatype_t MediaTypeROM::mount(FILE *f, uint32_t disksize)
+mediatype_t MediaTypeROM::mount(fnFile *f, uint32_t disksize)
 {
     Debug_print("**FILE MOUNT**\r\n");
 
@@ -91,7 +92,7 @@ mediatype_t MediaTypeROM::mount(FILE *f, uint32_t disksize)
 }
 
 // Returns FALSE on error
-success_is_true MediaTypeROM::create(FILE *f, uint32_t numBlocks)
+success_is_true MediaTypeROM::create(fnFile *f, uint32_t numBlocks)
 {
     Debug_print("FILE CREATE\r\n");
 
